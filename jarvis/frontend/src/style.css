@@ -1,0 +1,232 @@
+/* frontend/src/style.css */
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+:root {
+  --primary-cyan: #00e5ff;
+  --dark-cyan: rgba(0, 229, 255, 0.2);
+  --warning-orange: #ff8c00;
+  --bg-dark: #000b18;
+}
+
+html, body {
+  margin: 0; padding: 0;
+  width: 100vw; height: 100vh;
+  overflow: hidden;
+  background-color: var(--bg-dark);
+  font-family: 'Share Tech Mono', 'Courier New', Courier, monospace;
+  color: var(--primary-cyan);
+}
+
+/* Background Canvases */
+#matrix-canvas, #orb-canvas {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100vw; height: 100vh;
+  pointer-events: none;
+}
+#matrix-canvas { z-index: 0; opacity: 0.8; }
+#orb-canvas { z-index: 1; }
+
+/* Hex Overlay */
+.hex-overlay {
+  position: absolute; top:0; left:0; width:100%; height:100%;
+  z-index: 2; pointer-events: none;
+  background-image: radial-gradient(rgba(0, 229, 255, 0.05) 1px, transparent 1px);
+  background-size: 20px 20px;
+  opacity: 0.4;
+  mix-blend-mode: screen;
+}
+
+/* Scanline Effect */
+.scanline {
+  position: absolute; top:0; left:0; width:100%; height:5px;
+  background: var(--primary-cyan);
+  opacity: 0.4;
+  z-index: 3; pointer-events: none;
+  box-shadow: 0 0 20px var(--primary-cyan);
+  animation: scan 4s linear infinite;
+}
+@keyframes scan {
+  0% { top: -10%; }
+  100% { top: 110%; }
+}
+
+/* Corner Frames (Classic Iron Man) */
+.corner-frames {
+  position: absolute; top: 2%; left: 2%; width: 96%; height: 96%;
+  z-index: 3; pointer-events: none;
+}
+.corner-frames div {
+  position: absolute; width: 60px; height: 60px;
+  border-color: var(--primary-cyan); border-style: solid; opacity: 0.7;
+}
+.corner-frames .tl { top:0; left:0; border-width: 3px 0 0 3px; }
+.corner-frames .tr { top:0; right:0; border-width: 3px 3px 0 0; }
+.corner-frames .bl { bottom:0; left:0; border-width: 0 0 3px 3px; }
+.corner-frames .br { bottom:0; right:0; border-width: 0 3px 3px 0; }
+
+/* 3D Container & Floaters */
+.perspective-container {
+  perspective: 1200px;
+  position: absolute; top:0; left:0; width:100%; height:100%;
+  pointer-events: none;
+  z-index: 5;
+}
+.floater {
+  animation: float 5s ease-in-out infinite;
+}
+.offset-1 { animation-delay: -1s; }
+.offset-2 { animation-delay: -2.4s; }
+.offset-3 { animation-delay: -3.7s; }
+.offset-4 { animation-delay: -4.2s; }
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px) var(--tilt); }
+  50% { transform: translateY(-15px) var(--tilt); }
+}
+
+/* HUD Panels */
+.hud-panel {
+  position: absolute;
+  width: 240px;
+  background: rgba(0, 11, 24, 0.45);
+  border: 1px solid var(--primary-cyan);
+  box-shadow: inset 0 0 15px rgba(0,229,255,0.2), 0 0 10px rgba(0,229,255,0.2);
+  padding: 15px;
+  backdrop-filter: blur(4px);
+  --tilt: rotateY(0deg) rotateX(0deg);
+}
+
+.tilt-left { left: 80px; top: 25%; --tilt: rotateY(15deg); }
+.tilt-right { right: 80px; top: 25%; --tilt: rotateY(-15deg); }
+.tilt-left-lower { left: 80px; top: 60%; --tilt: rotateY(10deg) rotateX(10deg); }
+.tilt-right-lower { right: 80px; top: 60%; --tilt: rotateY(-10deg) rotateX(10deg); }
+
+.panel-header {
+  border-bottom: 1px solid var(--primary-cyan);
+  padding-bottom: 5px; margin-bottom: 15px;
+  font-size: 14px; letter-spacing: 2px;
+  text-shadow: 0 0 5px var(--primary-cyan);
+}
+.big-val { font-size: 32px; font-weight: bold; text-shadow: 0 0 10px var(--primary-cyan); }
+.sys-ok { color: var(--primary-cyan); }
+.sys-safe { color: #0f0; text-shadow: 0 0 10px #0f0; }
+
+.hud-subtext { font-size: 10px; margin-top: 5px; opacity: 0.8; letter-spacing: 1px; }
+.progress-wrap { width: 100%; height: 6px; background: rgba(0,229,255,0.2); margin-top: 10px; }
+.bar { height: 100%; background: var(--primary-cyan); width: 0%; box-shadow: 0 0 5px var(--primary-cyan); }
+.maxed { width: 100%; }
+
+/* Title & Glitch */
+#hud-top-left {
+  position: absolute; top: 50px; left: 80px;
+  --tilt: rotateY(5deg);
+}
+.glitch {
+  font-size: 36px;
+  margin: 0 0 10px 0;
+  position: relative;
+  text-shadow: 0 0 10px var(--primary-cyan);
+}
+.glitch::before, .glitch::after {
+  content: attr(data-text); position: absolute; top:0; left:0; width:100%; height:100%;
+  opacity: 0.8;
+}
+.glitch::before {
+  color: #0ff; z-index:-1;
+  animation: glitch-anim 2s infinite linear alternate-reverse;
+}
+.glitch::after {
+  color: #f0f; z-index:-2;
+  animation: glitch-anim2 3s infinite linear alternate-reverse;
+}
+@keyframes glitch-anim {
+  0% { clip-path: inset(20% 0 80% 0); transform: translate(-2px, 1px); }
+  20% { clip-path: inset(60% 0 10% 0); transform: translate(2px, -1px); }
+  40% { clip-path: inset(40% 0 50% 0); transform: translate(-2px, 2px); }
+  60% { clip-path: inset(80% 0 5% 0); transform: translate(2px, -2px); }
+  80% { clip-path: inset(10% 0 70% 0); transform: translate(-1px, 1px); }
+  100% { clip-path: inset(30% 0 50% 0); transform: translate(1px, -1px); }
+}
+@keyframes glitch-anim2 {
+  0% { clip-path: inset(10% 0 40% 0); transform: translate(2px, -2px); }
+  20% { clip-path: inset(80% 0 5% 0); transform: translate(-2px, 1px); }
+  40% { clip-path: inset(30% 0 60% 0); transform: translate(1px, -1px); }
+  60% { clip-path: inset(60% 0 20% 0); transform: translate(-1px, 2px); }
+  80% { clip-path: inset(20% 0 80% 0); transform: translate(2px, 1px); }
+  100% { clip-path: inset(50% 0 30% 0); transform: translate(-2px, -1px); }
+}
+
+.hud-text { font-size: 12px; letter-spacing: 1px; margin-bottom: 4px; display: flex; align-items: center; }
+.dot { width: 8px; height: 8px; background: var(--primary-cyan); border-radius: 50%; margin-left: 10px; animation: pulse 2s infinite; box-shadow: 0 0 10px var(--primary-cyan); }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* Ticker */
+.ticker-wrap {
+  position: absolute; bottom: 5%; left: 0; width: 100vw;
+  background: rgba(0, 11, 24, 0.8);
+  border-top: 1px solid var(--dark-cyan); border-bottom: 1px solid var(--dark-cyan);
+  padding: 5px 0; overflow: hidden; z-index: 6;
+}
+.ticker-content {
+  white-space: nowrap; font-size: 14px; letter-spacing: 3px;
+  animation: ticker 25s linear infinite;
+  text-shadow: 0 0 5px var(--primary-cyan);
+}
+@keyframes ticker {
+  0% { transform: translateX(100vw); }
+  100% { transform: translateX(-150vw); }
+}
+
+/* User Input */
+#top-center-input {
+  position: absolute; top: 60px; left: 50%; transform: translateX(-50%) var(--tilt);
+  --tilt: rotateY(0deg); pointer-events: auto;
+}
+.input-wrapper {
+  display: flex; align-items: center;
+  background: rgba(0,11,24,0.7);
+  border: 1px solid var(--primary-cyan);
+  padding: 8px 15px; border-radius: 4px;
+}
+.glow-border { box-shadow: inset 0 0 10px rgba(0,229,255,0.3), 0 0 15px rgba(0,229,255,0.4); }
+.prompt-symbol { margin-right: 10px; text-shadow: 0 0 5px var(--primary-cyan); font-weight: bold;}
+#chat-input {
+  background: transparent; border: none; color: var(--primary-cyan); outline: none;
+  font-family: 'Share Tech Mono', monospace; font-size: 16px; width: 300px;
+  text-shadow: 0 0 5px var(--primary-cyan);
+}
+#chat-input::placeholder { color: rgba(0, 229, 255, 0.4); }
+
+/* Bottom HUD Elements */
+#hud-bottom-center {
+  position: absolute; bottom: 12%; left: 50%; transform: translateX(-50%);
+  text-align: center;
+}
+.voice-status { font-size: 12px; margin-bottom: 8px; letter-spacing: 2px; }
+#waveform-canvas {
+  border: 1px solid var(--dark-cyan); background: rgba(0,11,24,0.6);
+  box-shadow: inset 0 0 10px rgba(0,229,255,0.2); border-radius: 4px; display: block;
+}
+
+/* Controls */
+#controls { position: fixed; top: 20px; right: 20px; display: flex; gap: 10px; z-index: 20; }
+#controls button {
+  width: 40px; height: 40px; background: rgba(0,11,24,0.6);
+  border: 1px solid var(--primary-cyan); border-radius: 5px; color: var(--primary-cyan); cursor: pointer;
+  transition: 0.3s; box-shadow: inset 0 0 10px rgba(0,229,255,0.1);
+}
+#controls button:hover { background: var(--dark-cyan); box-shadow: 0 0 15px var(--primary-cyan); }
+#controls button.muted { color: #f00; border-color: #f00; box-shadow: inset 0 0 10px rgba(255,0,0,0.3); }
+
+/* Dropdown */
+#menu-dropdown {
+  position: fixed; top: 70px; right: 20px;
+  background: rgba(0, 11, 24, 0.9); border: 1px solid var(--primary-cyan); padding: 10px;
+  display: flex; flex-direction: column; gap: 8px; z-index: 20; box-shadow: 0 0 15px rgba(0,229,255,0.2);
+}
+#menu-dropdown button {
+  background: transparent; border: none; color: var(--primary-cyan); padding: 5px 10px;
+  text-align: left; cursor: pointer; font-family: inherit; font-size: 14px;
+}
+#menu-dropdown button:hover { background: var(--dark-cyan); }
