@@ -605,11 +605,78 @@ pytest==8.0.0
 httpx==0.26.0
 alembic==1.13.1
 """),
-            "env": Template("""
-DATABASE_URL={% if database == "sqlite" %}sqlite:///./{{app_name}}.db{% else %}postgresql://app:${DB_PASSWORD:-changeme}@postgres:5432/app_db{% endif %}
-REDIS_URL=redis://redis:6379/0
-SECRET_KEY=secret-key-jarvis-v2-{{random_secret}}
-CORS_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost
+            "alembic_ini": Template("""[alembic]
+script_location = alembic
+prepend_sys_path = .
+version_path_separator = os
+sqlalchemy.url = %(DATABASE_URL)s
+
+[loggers]
+keys = root,sqlalchemy,alembic
+
+[handlers]
+keys = console
+
+[formatters]
+keys = generic
+
+[logger_root]
+level = WARN
+handlers = console
+qualname =
+
+[logger_sqlalchemy]
+level = WARN
+handlers =
+qualname = sqlalchemy.engine
+
+[logger_alembic]
+level = INFO
+handlers =
+qualname = alembic
+
+[handler_console]
+class = StreamHandler
+args = (sys.stderr,)
+level = NOTSET
+formatter = generic
+
+[formatter_generic]
+format = %(levelname)-5.5s [%(name)s] %(message)s
+datefmt = %H:%M:%S
+"""),
+            "alembic_env": Template("""from logging.config import fileConfig
+from sqlalchemy import engine_from_config, pool
+from alembic import context
+import os
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
+from models import Base
+
+config = context.config
+config.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL", "sqlite:///./app.db"))
+
+target_metadata = Base.metadata
+
+def run_migrations_offline():
+    url = config.get_main_option("sqlalchemy.url")
+    context.configure(url=url, target_metadata=target_metadata, literal_binds=True)
+    with context.begin_transaction():
+        context.run_migrations()
+
+def run_migrations_online():
+    connectable = engine_from_config(config.get_section(config.config_ini_section), prefix="sqlalchemy.", poolclass=pool.NullPool)
+    with connectable.connect() as connection:
+        context.configure(connection=connection, target_metadata=target_metadata)
+        with context.begin_transaction():
+            context.run_migrations()
+
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    run_migrations_online()
 """)
         }
 
@@ -647,6 +714,8 @@ CORS_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost
             database=spec.database,
             random_secret=secrets.token_hex(32)
         )
+        files["backend/alembic.ini"] = self.templates["alembic_ini"].render()
+        files["backend/alembic/env.py"] = self.templates["alembic_env"].render()
 
         files["backend/init_db.py"] = """from database import engine, Base\nimport models\nBase.metadata.create_all(bind=engine)\nprint("Database initialized successfully!")\n"""
 
