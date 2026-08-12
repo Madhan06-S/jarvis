@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SMK GYM | Forge Your Legacy</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;700;900&display=swap" rel="stylesheet">
+    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    <!-- Navbar -->
+    <nav id="navbar">
+        <div class="logo">SMK <span>GYM</span></div>
+        <ul class="nav-links">
+            <li><a href="#home">Home</a></li>
+            <li><a href="#about">About</a></li>
+            <li><a href="#classes">Classes</a></li>
+            <li><a href="#bmi">BMI Check</a></li>
+            <li><a href="#contact" class="btn-primary">Join Now</a></li>
+        </ul>
+    </nav>
+
+    <!-- Hero Section -->
+    <header id="home" class="hero">
+        <div class="overlay"></div>
+        <div class="hero-content">
+            <h1>UNLEASH YOUR <span class="highlight">POTENTIAL</span></h1>
+            <p>State-of-the-art equipment, elite trainers, and a community that pushes you past your limits.</p>
+            <div class="hero-buttons">
+                <a href="#contact" class="btn-primary">Start Your Free Trial</a>
+                <a href="#classes" class="btn-secondary">Explore Programs</a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Features / About -->
+    <section id="about" class="about">
+        <div class="section-title">
+            <h2>Why Choose <span>SMK</span></h2>
+        </div>
+        <div class="features-grid">
+            <div class="feature-card glass" data-scroll>
+                <div class="icon">🏋️</div>
+                <h3>Premium Equipment</h3>
+                <p>Train with industry-leading gear tailored for maximum performance and safety.</p>
+            </div>
+            <div class="feature-card glass" data-scroll>
+                <div class="icon">🏆</div>
+                <h3>Elite Trainers</h3>
+                <p>Personalized guidance from certified pros dedicated to your success.</p>
+            </div>
+            <div class="feature-card glass" data-scroll>
+                <div class="icon">⏱️</div>
+                <h3>24/7 Access</h3>
+                <p>Your fitness journey doesn't stop. Access the facility anytime, anywhere.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- BMI Calculator -->
+    <section id="bmi" class="bmi-section">
+        <div class="bmi-container glass" data-scroll>
+            <h2>Calculate Your <span>BMI</span></h2>
+            <p>Know your baseline to track your progress effectively.</p>
+            <form id="bmi-form">
+                <div class="input-group">
+                    <input type="number" id="height" placeholder="Height (cm)" required>
+                    <input type="number" id="weight" placeholder="Weight (kg)" required>
+                </div>
+                <button type="submit" class="btn-primary" id="btn-bmi">Calculate</button>
+            </form>
+            <div id="bmi-result" class="hidden"></div>
+        </div>
+    </section>
+
+    <!-- Contact Section -->
+    <section id="contact" class="contact">
+        <div class="contact-wrapper glass" data-scroll>
+            <h2>Ready to <span>Transform?</span></h2>
+            <p>Drop your details below and our team will get you set up immediately.</p>
+            <form id="contact-form">
+                <input type="text" id="name" placeholder="Full Name" required>
+                <input type="email" id="email" placeholder="Email Address" required>
+                <textarea id="message" rows="4" placeholder="Your Fitness Goals..." required></textarea>
+                <button type="submit" class="btn-primary" id="submit-contact">Send Message</button>
+            </form>
+            <div id="contact-status" class="hidden"></div>
+        </div>
+    </section>
+
+    <footer>
+        <p>&copy; 2026 SMK Gym. Built by JARVIS AI.</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
