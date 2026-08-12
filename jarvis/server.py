@@ -90,6 +90,9 @@ app.add_middleware(
 from builder_endpoint import router as builder_router
 app.include_router(builder_router)
 
+from voice_handler import router as voice_router
+app.include_router(voice_router)
+
 # ─────────────────────────────────────────────
 # Background context refresh
 # ─────────────────────────────────────────────
