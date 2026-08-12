@@ -87,6 +87,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from builder_endpoint import router as builder_router
+app.include_router(builder_router)
+
 # ─────────────────────────────────────────────
 # Background context refresh
 # ─────────────────────────────────────────────
