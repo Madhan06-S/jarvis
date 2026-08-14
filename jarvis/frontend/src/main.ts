@@ -1,3 +1,12 @@
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { JarvisInput } from './components/JarvisInput';
+
+const rootEl = document.createElement('div');
+rootEl.id = 'jarvis-input-root';
+document.body.appendChild(rootEl);
+ReactDOM.createRoot(rootEl).render(React.createElement(JarvisInput));
+
 import { createSocket } from './ws';
 import { VoiceInput, AudioPlayer } from './voice';
 import { createOrb, OrbState } from './orb';
@@ -5,6 +14,7 @@ import { initBuilderUI, appendLog, handleCodeStreamStart, handleCodeStreamChunk,
 
 const statusEl = document.getElementById('status-text')!;
 const errEl = document.getElementById('error-text')!;
+
 
 function main() {
     initBuilderUI();

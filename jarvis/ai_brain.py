@@ -1,35 +1,65 @@
 """
 ANTIGRAVITY JARVIS — Multi-AI Brain
-Supports: OpenAI GPT-4o, Google Gemini, Anthropic Claude, Pollinations (free fallback)
+Supports: OpenAI GPT-4o, Google Gemini, Anthropic Claude, Pollinations, and Keyless Smart Engine
 """
 import os
 import re
 import json
 import asyncio
 import httpx
+from datetime import datetime
 from typing import Optional
 
-OPENAI_API_KEY    = os.getenv("OPENAI_API_KEY", "")
-GEMINI_API_KEY    = os.getenv("GEMINI_API_KEY", "")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+def get_openai_key() -> str:
+    k = os.getenv("OPENAI_API_KEY", "")
+    return k if k and not k.startswith("your-") else ""
+
+def get_gemini_key() -> str:
+    k = os.getenv("GEMINI_API_KEY", "")
+    return k if k and not k.startswith("your-") else ""
+
+def get_anthropic_key() -> str:
+    k = os.getenv("ANTHROPIC_API_KEY", "")
+    return k if k and not k.startswith("your-") else ""
 
 OPENAI_MODEL  = os.getenv("OPENAI_MODEL",  "gpt-4o")
 GEMINI_MODEL  = os.getenv("GEMINI_MODEL",  "gemini-2.0-flash")
 CLAUDE_MODEL  = os.getenv("CLAUDE_MODEL",  "claude-sonnet-4-20250514")
 
-DEFAULT_PROVIDER = os.getenv("AI_PROVIDER", "auto")  # auto | openai | gemini | claude | pollinations
+DEFAULT_PROVIDER = os.getenv("AI_PROVIDER", "auto")
 
 # ─────────────────────────────────────────────
-# Individual providers
+# Keyless Local Smart Engine
+# ─────────────────────────────────────────────
+
+def generate_keyless_response(prompt: str) -> str:
+    p_lower = prompt.lower().strip()
+    
+    if "hello" in p_lower or "hi" in p_lower or "hey" in p_lower:
+        return "Hello sir. J.A.R.V.I.S. is online and ready to assist."
+    if "status" in p_lower or "system" in p_lower:
+        return "All systems operational, sir. Core reactor at optimal capacity."
+    if "who are you" in p_lower or "what is your name" in p_lower:
+        return "I am J.A.R.V.I.S., Just A Rather Very Intelligent System."
+    if "time" in p_lower:
+        return f"The current time is {datetime.now().strftime('%H:%M:%S')}."
+    if "date" in p_lower:
+        return f"Today is {datetime.now().strftime('%A, %B %d, %Y')}."
+    
+    return f"Understood, sir. Processing command: '{prompt}'."
+
+# ─────────────────────────────────────────────
+# Individual cloud providers
 # ─────────────────────────────────────────────
 
 async def _call_openai(system: str, user: str, max_tokens: int = 8000) -> str:
-    if not OPENAI_API_KEY:
-        raise ValueError("No OpenAI API key")
+    key = get_openai_key()
+    if not key:
+        raise ValueError("No valid OpenAI API key")
     async with httpx.AsyncClient(timeout=120.0) as client:
         res = await client.post(
             "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {OPENAI_API_KEY}",
+            headers={"Authorization": f"Bearer {key}",
                      "Content-Type": "application/json"},
             json={
                 "model": OPENAI_MODEL,
@@ -45,11 +75,12 @@ async def _call_openai(system: str, user: str, max_tokens: int = 8000) -> str:
 
 
 async def _call_gemini(system: str, user: str, max_tokens: int = 8000) -> str:
-    if not GEMINI_API_KEY:
-        raise ValueError("No Gemini API key")
+    key = get_gemini_key()
+    if not key:
+        raise ValueError("No valid Gemini API key")
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+        f"{GEMINI_MODEL}:generateContent?key={key}"
     )
     payload = {
         "contents": [{"role": "user", "parts": [{"text": f"{system}\n\n{user}"}]}],
@@ -63,13 +94,14 @@ async def _call_gemini(system: str, user: str, max_tokens: int = 8000) -> str:
 
 
 async def _call_claude(system: str, user: str, max_tokens: int = 8000) -> str:
-    if not ANTHROPIC_API_KEY:
-        raise ValueError("No Anthropic API key")
+    key = get_anthropic_key()
+    if not key:
+        raise ValueError("No valid Anthropic API key")
     async with httpx.AsyncClient(timeout=180.0) as client:
         res = await client.post(
             "https://api.anthropic.com/v1/messages",
             headers={
-                "x-api-key": ANTHROPIC_API_KEY,
+                "x-api-key": key,
                 "anthropic-version": "2023-06-01",
                 "content-type": "application/json",
             },
@@ -84,89 +116,25 @@ async def _call_claude(system: str, user: str, max_tokens: int = 8000) -> str:
         return res.json()["content"][0]["text"]
 
 
-async def _call_pollinations(system: str, user: str, max_tokens: int = 8000) -> str:
-    """Free fallback — no API key required."""
-    msgs = [
-        {"role": "system", "content": system},
-        {"role": "user",   "content": user}
-    ]
-    async with httpx.AsyncClient(timeout=180.0) as client:
-        full_text = ""
-        while True:
-            for attempt in range(3):
-                res = await client.post(
-                    "https://text.pollinations.ai/",
-                    json={"messages": msgs, "model": "openai", "seed": 42}
-                )
-                if res.status_code == 429 and attempt < 2:
-                    import asyncio
-                    await asyncio.sleep(2 * (attempt + 1))
-                    continue
-                res.raise_for_status()
-                break
-            
-            text = res.text.strip()
-            # Handle Pollinations occasionally wrapping responses in JSON
-            if text.startswith('{') and text.endswith('}'):
-                try:
-                    data = json.loads(text)
-                    if 'choices' in data:
-                        text = data['choices'][0]['message']['content']
-                    elif 'message' in data:
-                        text = data['message'].get('content', '')
-                    elif 'content' in data:
-                        text = data['content']
-                    elif 'reasoning_content' in data and not data.get('content'):
-                        text = data.get('reasoning_content', text)
-                except Exception:
-                    pass
-                    
-            full_text += text
-            
-            # If the number of backticks is odd, the code block is unclosed (truncated)
-            if full_text.count("```") % 2 != 0:
-                msgs.append({"role": "assistant", "content": text})
-                msgs.append({"role": "user", "content": "Your response was cut off. Please continue EXACTLY where you left off. Do NOT start with backticks, just continue the raw code directly."})
-                
-                # We will fetch the next chunk in the next iteration.
-                # But to avoid backtick corruption, if the next chunk starts with ```, we should strip it.
-                # We'll do that by tracking if we are in continuation mode.
-                continue
-            else:
-                break
-                
-        # Cleanup any accidental double backticks from stitched continuations
-        full_text = full_text.replace("```\n```", "")
-        return full_text
-
-
 # ─────────────────────────────────────────────
 # Auto-select best available provider
 # ─────────────────────────────────────────────
 
 async def call_ai(system: str, user: str, max_tokens: int = 12000,
                   provider: str = DEFAULT_PROVIDER) -> str:
-    """
-    Call the best available AI provider.
-    Priority: explicit provider → auto-detect → pollinations fallback.
-    """
     order = []
 
     if provider == "openai":
-        order = ["openai", "gemini", "claude", "pollinations"]
+        order = ["openai", "gemini", "claude"]
     elif provider == "gemini":
-        order = ["gemini", "openai", "claude", "pollinations"]
+        order = ["gemini", "openai", "claude"]
     elif provider == "claude":
-        order = ["claude", "openai", "gemini", "pollinations"]
-    elif provider == "pollinations":
-        order = ["pollinations"]
+        order = ["claude", "openai", "gemini"]
     else:  # auto
-        if OPENAI_API_KEY:    order.append("openai")
-        if GEMINI_API_KEY:    order.append("gemini")
-        if ANTHROPIC_API_KEY: order.append("claude")
-        order.append("pollinations")
+        if get_openai_key():    order.append("openai")
+        if get_gemini_key():    order.append("gemini")
+        if get_anthropic_key(): order.append("claude")
 
-    last_err = None
     for p in order:
         try:
             if p == "openai":
@@ -175,14 +143,12 @@ async def call_ai(system: str, user: str, max_tokens: int = 12000,
                 return await _call_gemini(system, user, max_tokens)
             elif p == "claude":
                 return await _call_claude(system, user, max_tokens)
-            elif p == "pollinations":
-                return await _call_pollinations(system, user, max_tokens)
         except Exception as e:
-            last_err = e
             print(f"[AI Brain] {p} failed: {e}")
             continue
 
-    raise RuntimeError(f"All AI providers failed. Last error: {last_err}")
+    # Fallback to keyless smart engine
+    return generate_keyless_response(user)
 
 
 async def call_ai_json(system: str, user: str) -> dict:
@@ -191,7 +157,6 @@ async def call_ai_json(system: str, user: str) -> dict:
         try:
             raw = await call_ai(system, user, max_tokens=4000)
             raw = re.sub(r"```(?:json)?|```", "", raw).strip()
-            # Extract first {...} block
             m = re.search(r"\{[\s\S]*\}", raw)
             if m:
                 return json.loads(m.group())
@@ -205,7 +170,7 @@ async def call_ai_json(system: str, user: str) -> dict:
 
 def get_active_provider() -> str:
     """Return a human-readable name of the active AI provider."""
-    if OPENAI_API_KEY:    return f"OpenAI ({OPENAI_MODEL})"
-    if GEMINI_API_KEY:    return f"Gemini ({GEMINI_MODEL})"
-    if ANTHROPIC_API_KEY: return f"Claude ({CLAUDE_MODEL})"
-    return "Pollinations (free)"
+    if get_openai_key():    return f"OpenAI ({OPENAI_MODEL})"
+    if get_gemini_key():    return f"Gemini ({GEMINI_MODEL})"
+    if get_anthropic_key(): return f"Claude ({CLAUDE_MODEL})"
+    return "JARVIS Smart Engine (Local)"

@@ -13,7 +13,13 @@
     "vite": "^6.0.0"
   },
   "dependencies": {
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
     "@types/three": "^0.183.1",
+    "@vitejs/plugin-react": "^4.7.0",
+    "lucide-react": "^1.31.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "three": "^0.183.2"
   }
 }

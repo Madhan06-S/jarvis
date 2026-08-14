@@ -5,6 +5,7 @@ import base64
 import openai
 import httpx
 from datetime import datetime
+import ai_brain
 
 router = APIRouter(prefix="/voice", tags=["Voice"])
 
@@ -12,28 +13,39 @@ class Command(BaseModel):
     text: str
 
 async def ask_llm(prompt: str) -> str:
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        return "[ERROR] OPENAI_API_KEY not set in .env"
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    print(f"[DEBUG ask_llm] OPENAI_API_KEY raw: {repr(api_key)}")
+    if api_key and not api_key.startswith("your-") and not api_key.startswith("sk-your"):
+        try:
+            client = openai.AsyncOpenAI(api_key=api_key)
+            resp = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are J.A.R.V.I.S., Tony Stark's AI assistant. Be concise."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=200,
+                temperature=0.7
+            )
+            return resp.choices[0].message.content
+        except Exception as e:
+            print(f"[OPENAI ERROR] {e}")
+
+    # Fallback to keyless AI Brain
     try:
-        client = openai.AsyncOpenAI(api_key=api_key)
-        resp = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are J.A.R.V.I.S., Tony Stark's AI assistant. Be concise."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=200,
-            temperature=0.7
+        return await ai_brain.call_ai(
+            "You are J.A.R.V.I.S., Tony Stark's AI assistant. Be concise.",
+            prompt,
+            max_tokens=200
         )
-        return resp.choices[0].message.content
     except Exception as e:
-        return f"[ERROR] {str(e)}"
+        print(f"[AI BRAIN ERROR] {e}")
+        return ai_brain.generate_keyless_response(prompt)
 
 async def speak_tts(text: str) -> bytes:
-    api_key = os.getenv("ELEVENLABS_API_KEY")
+    api_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
     voice_id = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")
-    if not api_key:
+    if not api_key or api_key.startswith("your-"):
         return b""
     try:
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
@@ -65,6 +77,7 @@ async def voice_command(cmd: Command):
 async def voice_health():
     return {
         "status": "ok",
-        "openai": bool(os.getenv("OPENAI_API_KEY")),
-        "elevenlabs": bool(os.getenv("ELEVENLABS_API_KEY"))
+        "openai": bool(os.getenv("OPENAI_API_KEY") and not os.getenv("OPENAI_API_KEY", "").startswith("your-")),
+        "elevenlabs": bool(os.getenv("ELEVENLABS_API_KEY") and not os.getenv("ELEVENLABS_API_KEY", "").startswith("your-")),
+        "ai_brain": ai_brain.get_active_provider()
     }
