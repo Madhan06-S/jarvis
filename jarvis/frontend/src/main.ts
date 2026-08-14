@@ -84,22 +84,41 @@ function main() {
         setState("idle");
     });
 
+    function speakText(text: string) {
+        if (!('speechSynthesis' in window)) return;
+        speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.rate = 1.0; u.pitch = 0.9;
+        const voices = speechSynthesis.getVoices();
+        const v = voices.find(v => v.name.includes('Daniel') || v.name.includes('Google UK English Male'));
+        if (v) u.voice = v;
+        speechSynthesis.speak(u);
+    }
+
     socket.onMessage(msg => {
         if (msg.type === "audio" && msg.data) {
             setState("speaking");
             audio.enqueue(msg.data as string);
+        } else if (msg.type === "tts_fallback") {
+            const txt = String(msg.text || msg.message || "");
+            statusEl.innerText = txt;
+            if (txt) speakText(txt);
+            setState("speaking");
+        } else if (msg.type === "response") {
+            const txt = String(msg.text || msg.message || "");
+            statusEl.innerText = txt;
+            if (txt) speakText(txt);
+            setState("speaking");
         } else if (msg.type === "status" && msg.state) {
             if (msg.state === "idle" && audio.isIdle()) {
                 setState("idle");
-            } else if (msg.state === "working") {
+            } else if (msg.state === "working" || msg.state === "processing") {
                 setState("thinking");
-                statusEl.innerText = "WORKING...";
+                statusEl.innerText = String(msg.message || "WORKING...");
             }
-        } else if (msg.type === "tts_fallback") {
-            errEl.innerText = String(msg.message);
-            errEl.style.opacity = "1";
-            setTimeout(() => { errEl.style.opacity = "0"; }, 4000);
+
         } else if (msg.type === "task_complete" || msg.type === "action_queued") {
+
             const toast = document.createElement('div');
             toast.className = 'toast';
             toast.innerText = msg.type === 'action_queued' ? `→ ${msg.action}` : `✓ ${msg.name} done`;

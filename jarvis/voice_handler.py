@@ -1,6 +1,6 @@
 """
-J.A.R.V.I.S. Voice Pipeline v2.1
-Zero-API-Key Mode + Push-to-Talk + Conversation Memory
+J.A.R.V.I.S. Voice Pipeline v2.2
+Zero-API-Key Mode + Push-to-Talk + Conversation Memory + Keyless Fallback
 """
 import asyncio
 import json
@@ -10,6 +10,7 @@ import tempfile
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Optional, List
 from datetime import datetime
+import ai_brain
 
 try:
     import webrtcvad
@@ -44,12 +45,12 @@ class ConversationMemory:
 # ─── STT FALLBACK CHAIN ───
 async def transcribe_any(audio_bytes: bytes) -> str:
     """
-    Try Groq → OpenAI → return empty (frontend will use browser STT).
+    Try Groq → OpenAI → return empty.
     """
-    groq_key = os.getenv("GROQ_API_KEY")
-    openai_key = os.getenv("OPENAI_API_KEY")
+    groq_key = os.getenv("GROQ_API_KEY", "").strip()
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
     
-    if groq_key:
+    if groq_key and not groq_key.startswith("your-"):
         try:
             import openai
             client = openai.AsyncOpenAI(api_key=groq_key, base_url="https://api.groq.com/openai/v1")
@@ -64,7 +65,7 @@ async def transcribe_any(audio_bytes: bytes) -> str:
         except Exception as e:
             print(f"Groq STT failed: {e}")
     
-    if openai_key:
+    if openai_key and not openai_key.startswith("your-"):
         try:
             import openai
             client = openai.AsyncOpenAI(api_key=openai_key)
@@ -79,129 +80,120 @@ async def transcribe_any(audio_bytes: bytes) -> str:
         except Exception as e:
             print(f"OpenAI STT failed: {e}")
     
-    return ""  # Triggers frontend browser STT fallback
+    return ""
+
+async def stream_tts_any(text: str, websocket: WebSocket):
+    """
+    Try ElevenLabs → return tts_fallback so browser speaks.
+    """
+    eleven_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
+    voice_id = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")
+    
+    if eleven_key and not eleven_key.startswith("your-"):
+        try:
+            import httpx
+            url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
+            headers = {"xi-api-key": eleven_key, "Content-Type": "application/json"}
+            payload = {"text": text, "model_id": "eleven_turbo_v2_5"}
+            
+            async with httpx.AsyncClient() as client:
+                async with client.stream("POST", url, json=payload, headers=headers) as resp:
+                    if resp.status_code == 200:
+                        async for chunk in resp.aiter_bytes():
+                            b64 = base64.b64encode(chunk).decode("utf-8")
+                            await websocket.send_json({"type": "tts_chunk", "audio": b64})
+                        await websocket.send_json({"type": "tts_chunk", "done": True})
+                        return
+        except Exception as e:
+            print(f"ElevenLabs TTS failed: {e}")
+    
+    # Fallback: browser TTS
+    await websocket.send_json({"type": "tts_fallback", "text": text})
 
 # ─── LLM WITH MEMORY ───
 async def stream_llm_with_memory(prompt: str, memory: ConversationMemory, websocket: WebSocket):
-    """Stream LLM with conversation context."""
-    openai_key = os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+    """Stream LLM with conversation context and keyless fallback."""
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
     
     messages = [
-        {"role": "system", "content": "You are J.A.R.V.I.S., Tony Stark's AI assistant. Keep voice responses concise (1-2 sentences). You have memory of the current conversation."}
+        {"role": "system", "content": "You are J.A.R.V.I.S., Tony Stark's AI assistant. Keep responses concise (1-2 sentences)."}
     ]
     messages.extend(memory.get_context())
     messages.append({"role": "user", "content": prompt})
     
-    full_response = []
-    sentence_buffer = []
-    
-    if os.getenv("OPENAI_API_KEY"):
+    if openai_key and not openai_key.startswith("your-"):
         try:
             import openai
-            client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            client = openai.AsyncOpenAI(api_key=openai_key)
             stream = await client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=messages,
                 stream=True,
                 max_tokens=150
             )
+            full_response = []
             async for chunk in stream:
                 delta = chunk.choices[0].delta.content or ""
-                full_response.append(delta)
-                sentence_buffer.append(delta)
-                await websocket.send_json({"type": "llm_token", "text": delta})
-                
-                if any(p in delta for p in ".!?"):
-                    sentence = "".join(sentence_buffer).strip()
-                    if sentence:
-                        await stream_tts_any(sentence, websocket)
-                        sentence_buffer = []
+                if delta:
+                    full_response.append(delta)
+                    await websocket.send_json({"type": "llm_token", "text": delta})
             
-            if sentence_buffer:
-                remaining = "".join(sentence_buffer).strip()
-                if remaining:
-                    await stream_tts_any(remaining, websocket)
-            
-            response_text = "".join(full_response)
-            memory.add("user", prompt)
-            memory.add("assistant", response_text)
-            return response_text
-            
+            response_text = "".join(full_response).strip()
+            if response_text:
+                await websocket.send_json({"type": "response", "text": response_text})
+                await stream_tts_any(response_text, websocket)
+                memory.add("user", prompt)
+                memory.add("assistant", response_text)
+                return response_text
         except Exception as e:
-            print(f"LLM failed: {e}")
+            print(f"OpenAI LLM failed: {e}")
     
-    # Fallback: smart static response
-    fallback = "I'm operational, sir. All primary sub-systems are online and standing by."
-    await websocket.send_json({"type": "llm_token", "text": fallback})
-    await stream_tts_any(fallback, websocket)
+    # Fallback to keyless AI Brain
+    try:
+        response_text = await ai_brain.call_ai(
+            "You are J.A.R.V.I.S., Tony Stark's AI assistant. Keep responses concise (1-2 sentences).",
+            prompt,
+            max_tokens=150
+        )
+    except Exception as e:
+        print(f"AI Brain fallback failed: {e}")
+        response_text = ai_brain.generate_keyless_response(prompt)
+    
+    await websocket.send_json({"type": "llm_token", "text": response_text})
+    await websocket.send_json({"type": "response", "text": response_text})
+    await stream_tts_any(response_text, websocket)
     memory.add("user", prompt)
-    memory.add("assistant", fallback)
-    return fallback
+    memory.add("assistant", response_text)
+    return response_text
 
-# ─── TTS FALLBACK CHAIN ───
-async def stream_tts_any(text: str, websocket: WebSocket):
-    """Try ElevenLabs → Browser TTS fallback."""
-    eleven_key = os.getenv("ELEVENLABS_API_KEY")
-    voice_id = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")
-    
-    if eleven_key:
-        try:
-            import httpx
-            url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
-            headers = {"xi-api-key": eleven_key, "Content-Type": "application/json"}
-            payload = {
-                "text": text,
-                "model_id": "eleven_turbo_v2_5",
-                "optimize_streaming_latency": 4,
-                "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
-            }
-            async with httpx.AsyncClient() as client:
-                async with client.stream("POST", url, json=payload, headers=headers, timeout=30) as resp:
-                    if resp.status_code == 200:
-                        async for chunk in resp.aiter_bytes(chunk_size=8192):
-                            if chunk:
-                                await websocket.send_json({
-                                    "type": "tts_chunk",
-                                    "audio": base64.b64encode(chunk).decode("utf-8"),
-                                    "done": False
-                                })
-                        await websocket.send_json({"type": "tts_chunk", "audio": "", "done": True})
-                        return
-        except Exception as e:
-            print(f"ElevenLabs failed: {e}")
-    
-    # Final fallback: browser TTS (zero API key)
-    await websocket.send_json({"type": "tts_fallback", "text": text})
-
-# ─── VOICE SESSION (with Push-to-Talk support) ───
 class VoiceSession:
     def __init__(self, websocket: WebSocket):
-        self.ws = websocket
-        self.memory = ConversationMemory(max_turns=5)
-        self.state = "idle"  # idle | wake | listening | push_to_talk | processing
+        self.websocket = websocket
+        self.memory = ConversationMemory()
+        self.state = "idle"
+        self.push_to_talk_active = False
         self.audio_buffer = bytearray()
         self.silence_count = 0
         self.speech_count = 0
-        self.frame_size = int(16000 * 30 / 1000) * 2  # 30ms @ 16kHz, 16-bit
-        self.push_to_talk_active = False
-    
-    def process_frame(self, frame: bytes) -> Optional[str]:
-        is_speech = vad.is_speech(frame, 16000) if vad else True
+        self.frame_size = 640  # 20ms @ 16kHz 16-bit mono
+
+    def process_frame(self, pcm_bytes: bytes) -> Optional[str]:
+        if len(pcm_bytes) != self.frame_size:
+            return None
         
-        if self.state in ("listening", "push_to_talk"):
+        self.audio_buffer.extend(pcm_bytes)
+        
+        if vad:
+            is_speech = vad.is_speech(pcm_bytes, 16000)
             if is_speech:
-                self.silence_count = 0
                 self.speech_count += 1
-                self.audio_buffer.extend(frame)
+                self.silence_count = 0
             else:
                 self.silence_count += 1
-                if self.speech_count > 10:
-                    self.audio_buffer.extend(frame)
-                    if self.silence_count > 25:  # ~750ms silence
-                        return "utterance_end"
             
-            if self.push_to_talk_active and len(self.audio_buffer) > self.frame_size * 1000:
-                return "utterance_end"
+            if self.speech_count > 5:
+                if self.silence_count > 25:  # ~750ms silence
+                    return "utterance_end"
         
         return None
     
@@ -220,7 +212,7 @@ async def voice_websocket(websocket: WebSocket):
     
     await websocket.send_json({
         "type": "status",
-        "message": "Say 'Hey Jarvis' or hold Space",
+        "message": "Say 'Hey Jarvis' or type a command",
         "state": "idle",
         "api_keys": {
             "stt": bool(os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY")),
@@ -235,16 +227,32 @@ async def voice_websocket(websocket: WebSocket):
             
             if "text" in message and message["text"]:
                 data = json.loads(message["text"])
-                msg_type = data.get("type")
+                msg_type = data.get("type", "")
+                
+                # ─── TEXT COMMANDS & TRANSCRIPTS ───
+                if msg_type in ("transcript", "text_command", "text", "browser_stt_result", "user_message"):
+                    text = data.get("text", "").strip()
+                    if text:
+                        print(f"[VOICE WS] Processing text command: '{text}'")
+                        await websocket.send_json({"type": "status", "message": f"Processing: {text}", "state": "processing"})
+                        await websocket.send_json({"type": "transcript", "text": text})
+                        await stream_llm_with_memory(text, session.memory, websocket)
+                    
+                    session.state = "idle"
+                    await websocket.send_json({
+                        "type": "status",
+                        "message": "Say 'Hey Jarvis' or type a command",
+                        "state": "idle"
+                    })
                 
                 # ─── PUSH-TO-TALK ───
-                if msg_type == "push_to_talk_start":
+                elif msg_type == "push_to_talk_start":
                     session.state = "push_to_talk"
                     session.push_to_talk_active = True
                     session.audio_buffer.clear()
                     await websocket.send_json({
                         "type": "status",
-                        "message": "Recording... (release Space to send)",
+                        "message": "Recording...",
                         "state": "listening"
                     })
                 
@@ -256,21 +264,18 @@ async def voice_websocket(websocket: WebSocket):
                     if len(audio) > 0:
                         await websocket.send_json({"type": "status", "message": "Processing...", "state": "processing"})
                         text = await transcribe_any(audio)
-                        
-                        if not text:
+                        if text:
+                            await websocket.send_json({"type": "transcript", "text": text})
+                            await stream_llm_with_memory(text, session.memory, websocket)
+                        else:
                             await websocket.send_json({"type": "stt_fallback", "reason": "no_api_key"})
-                            session.state = "idle"
-                            continue
-                        
-                        await websocket.send_json({"type": "transcript", "text": text})
-                        await stream_llm_with_memory(text, session.memory, websocket)
-                        
-                        session.state = "idle"
-                        await websocket.send_json({
-                            "type": "status",
-                            "message": "Say 'Hey Jarvis' or hold Space",
-                            "state": "idle"
-                        })
+                    
+                    session.state = "idle"
+                    await websocket.send_json({
+                        "type": "status",
+                        "message": "Say 'Hey Jarvis' or type a command",
+                        "state": "idle"
+                    })
                 
                 # ─── WAKE WORD ───
                 elif msg_type == "wake_detected":
@@ -282,47 +287,10 @@ async def voice_websocket(websocket: WebSocket):
                         "state": "listening"
                     })
                 
-                elif msg_type == "utterance_complete":
-                    session.state = "processing"
-                    audio = session.get_audio()
-                    
-                    if len(audio) > 0:
-                        text = await transcribe_any(audio)
-                        
-                        if not text:
-                            await websocket.send_json({"type": "stt_fallback", "reason": "no_api_key"})
-                            session.state = "idle"
-                            continue
-                        
-                        await websocket.send_json({"type": "transcript", "text": text})
-                        await stream_llm_with_memory(text, session.memory, websocket)
-                    
-                    session.state = "idle"
-                    await websocket.send_json({
-                        "type": "status",
-                        "message": "Say 'Hey Jarvis' or hold Space",
-                        "state": "idle"
-                    })
-                
-                # ─── BROWSER STT RESULT ───
-                elif msg_type == "browser_stt_result":
-                    text = data.get("text", "").strip()
-                    if text:
-                        await websocket.send_json({"type": "transcript", "text": text})
-                        await stream_llm_with_memory(text, session.memory, websocket)
-                    
-                    session.state = "idle"
-                    await websocket.send_json({
-                        "type": "status",
-                        "message": "Say 'Hey Jarvis' or hold Space",
-                        "state": "idle"
-                    })
-                
-                # ─── CLEAR MEMORY ───
                 elif msg_type == "clear_memory":
                     session.memory.clear()
-                    await websocket.send_json({"type": "status", "message": "Conversation memory cleared", "state": "idle"})
-            
+                    await websocket.send_json({"type": "status", "message": "Memory cleared", "state": "idle"})
+
             elif "bytes" in message and message["bytes"]:
                 message_bytes = message["bytes"]
                 if session.state in ("listening", "push_to_talk"):
@@ -339,21 +307,9 @@ async def voice_websocket(websocket: WebSocket):
                                 if text:
                                     await websocket.send_json({"type": "transcript", "text": text})
                                     await stream_llm_with_memory(text, session.memory, websocket)
-                                else:
-                                    await websocket.send_json({"type": "stt_fallback", "reason": "no_api_key"})
-                                
-                                session.state = "idle"
-                                await websocket.send_json({
-                                    "type": "status",
-                                    "message": "Say 'Hey Jarvis' or hold Space",
-                                    "state": "idle"
-                                })
-    
+                            session.state = "idle"
+
     except WebSocketDisconnect:
-        print("Voice client disconnected")
+        print("[VOICE WS] Client disconnected")
     except Exception as e:
-        print(f"Voice error: {e}")
-        try:
-            await websocket.send_json({"type": "error", "message": str(e)})
-        except Exception:
-            pass
+        print(f"[VOICE WS] Error: {e}")
