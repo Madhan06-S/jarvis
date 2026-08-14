@@ -93,6 +93,14 @@ app.include_router(builder_router)
 from voice_handler import router as voice_router
 app.include_router(voice_router)
 
+from diagnostic import diagnostic_router
+app.include_router(diagnostic_router)
+
+from voice_rest_only import router as voice_rest_router
+app.include_router(voice_rest_router)
+
+
+
 # ─────────────────────────────────────────────
 # Background context refresh
 # ─────────────────────────────────────────────
