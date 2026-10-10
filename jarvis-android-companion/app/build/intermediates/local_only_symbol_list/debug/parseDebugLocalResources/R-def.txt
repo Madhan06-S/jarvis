@@ -1,0 +1,15 @@
+R_DEF: Internal format may change without notice
+local
+id btnConnect
+id btnPermissionAccess
+id btnPermissionNotify
+id etServerIp
+id tvLog
+id tvSettings
+id tvStatusTitle
+id tvSub
+id tvTitle
+layout activity_main
+string app_name
+xml accessibility_service_config
+xml network_security_config

@@ -288,8 +288,8 @@ def get_courses(): return courses_db
 def get_stats(): return {"total_students":1248,"teachers":64,"courses":32,"attendance":"91%"}
 """
 
-def get_fallback_app(domain: str, title: str) -> dict:
+def get_fallback_app(domain: str, title: str, description: str = "") -> dict:
     from fallback_templates import get_fallback_app as _base
     if domain == "education":
         return {"app": _EDUCATION_APP, "backend": _EDUCATION_BACKEND}
-    return _base(domain, title)
+    return _base(domain, title, description)

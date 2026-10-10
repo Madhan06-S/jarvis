@@ -1,0 +1,18 @@
+[
+    {
+        "merged": "C:\\Users\\nandh\\.gradle\\daemon\\9.1.0\\com.jarvis.companion.app-debug-27:\\xml_accessibility_service_config.xml.flat",
+        "source": "C:\\Users\\nandh\\.gradle\\daemon\\9.1.0\\com.jarvis.companion.app-main-29:\\xml\\accessibility_service_config.xml"
+    },
+    {
+        "merged": "com.jarvis.companion.app-debug-27:/xml_network_security_config.xml.flat",
+        "source": "com.jarvis.companion.app-main-29:/xml/network_security_config.xml"
+    },
+    {
+        "merged": "C:\\Users\\nandh\\.gradle\\daemon\\9.1.0\\com.jarvis.companion.app-debug-27:\\xml_network_security_config.xml.flat",
+        "source": "C:\\Users\\nandh\\.gradle\\daemon\\9.1.0\\com.jarvis.companion.app-main-29:\\xml\\network_security_config.xml"
+    },
+    {
+        "merged": "C:\\Users\\nandh\\.gradle\\daemon\\9.1.0\\com.jarvis.companion.app-debug-27:\\layout_activity_main.xml.flat",
+        "source": "C:\\Users\\nandh\\.gradle\\daemon\\9.1.0\\com.jarvis.companion.app-main-29:\\layout\\activity_main.xml"
+    }
+]

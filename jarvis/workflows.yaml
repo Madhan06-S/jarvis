@@ -1,0 +1,19 @@
+# JARVIS Project Workflows Configuration
+workflows:
+  jarvis:
+    path: "/Users/madhan/Downloads/projects/ironnn/jarvis"
+    editor: "code"
+    dev_command: "./venv/bin/python server.py"
+    url: "http://localhost:5173"
+
+  food-order-app:
+    path: "/Users/madhan/Downloads/projects/ironnn/food-order-app"
+    editor: "code"
+    dev_command: "npm start"
+    url: "http://localhost:3000"
+
+  smk_gym:
+    path: "/Users/madhan/Downloads/projects/ironnn/smk_gym"
+    editor: "code"
+    dev_command: "npm run dev"
+    url: "http://localhost:5173"

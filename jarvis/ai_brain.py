@@ -9,9 +9,38 @@ import asyncio
 import httpx
 from typing import Optional
 
+# ── Manual .env Loader (Bulletproof & Filter Placeholders) ─────────────────
+def _load_env():
+    for path in [".env", "../.env", "d:/ironnn/jarvis/.env"]:
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        if "=" in line:
+                            k, v = line.split("=", 1)
+                            k = k.strip()
+                            v = v.strip().strip('"').strip("'")
+                            if v and "your-" not in v.lower():
+                                os.environ[k] = v
+            except Exception:
+                pass
+
+_load_env()
+
 OPENAI_API_KEY    = os.getenv("OPENAI_API_KEY", "")
 GEMINI_API_KEY    = os.getenv("GEMINI_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+
+# Explicitly clear placeholders from system environment variables
+if ANTHROPIC_API_KEY and ("your-" in ANTHROPIC_API_KEY.lower() or ANTHROPIC_API_KEY.startswith("your-")):
+    ANTHROPIC_API_KEY = ""
+if GEMINI_API_KEY and ("your-" in GEMINI_API_KEY.lower() or GEMINI_API_KEY.startswith("your-")):
+    GEMINI_API_KEY = ""
+if OPENAI_API_KEY and ("your-" in OPENAI_API_KEY.lower() or OPENAI_API_KEY.startswith("your-")):
+    OPENAI_API_KEY = ""
 
 OPENAI_MODEL  = os.getenv("OPENAI_MODEL",  "gpt-4o")
 GEMINI_MODEL  = os.getenv("GEMINI_MODEL",  "gemini-2.0-flash")
@@ -20,28 +49,130 @@ CLAUDE_MODEL  = os.getenv("CLAUDE_MODEL",  "claude-sonnet-4-20250514")
 DEFAULT_PROVIDER = os.getenv("AI_PROVIDER", "auto")  # auto | openai | gemini | claude | pollinations
 
 # ─────────────────────────────────────────────
+# Continuation deduplication — kills the #1 build error
+# ─────────────────────────────────────────────
+
+def _dedup_continuation_restarts(full_text: str) -> str:
+    """
+    When AI responses are continued after truncation, the AI often restarts
+    the entire file from scratch mid-stream, producing patterns like:
+      ...some code...
+      filename="frontend/src/App.tsx"
+      import React, { useState ...
+    This function detects these restart boundaries and keeps only the LAST
+    complete copy of each file within a code block, eliminating corruption.
+    """
+    # Pattern: filename="..." appearing mid-text (not at start of a code block)
+    restart_pattern = re.compile(
+        r'filename=["\']([^"\'\n]+)["\']\s*\n'
+    )
+    
+    # Find all restart points
+    matches = list(restart_pattern.finditer(full_text))
+    if not matches:
+        return full_text
+    
+    # Group restart points by filename
+    restarts_by_file = {}
+    for m in matches:
+        fname = m.group(1).strip()
+        if fname not in restarts_by_file:
+            restarts_by_file[fname] = []
+        restarts_by_file[fname].append(m)
+    
+    # For each file that has multiple restart points, we need to keep only
+    # the content from the LAST restart to the end (or next different filename)
+    if not restarts_by_file:
+        return full_text
+    
+    # Strategy: find all restart markers and cut the text at the LAST one
+    # for the most-restarted file
+    for fname, file_matches in restarts_by_file.items():
+        if len(file_matches) <= 1:
+            continue
+        
+        # Find the opening ``` that contains the LAST restart
+        last_restart = file_matches[-1]
+        # Look backwards from the restart to find the opening ```
+        pre_text = full_text[:last_restart.start()]
+        last_fence_pos = pre_text.rfind('```')
+        
+        if last_fence_pos >= 0:
+            # Keep everything before the first restart's code block opening,
+            # then the last restart's code block
+            first_restart = file_matches[0]
+            pre_first = full_text[:first_restart.start()]
+            first_fence = pre_first.rfind('```')
+            
+            if first_fence >= 0:
+                # Take: everything before first occurrence + last occurrence onwards
+                before = full_text[:first_fence]
+                after = full_text[last_fence_pos:]
+                full_text = before + after
+    
+    # Also strip inline filename= that got stuck mid-code (not inside ```)
+    # Pattern: code...filename="path"\nimport React → just keep from import
+    full_text = re.sub(
+        r'(?<=\n)\s*filename=["\'][^"\']+["\']\s*\n(?=import\s)',
+        '\n',
+        full_text
+    )
+    
+    return full_text
+
+
+def _clean_ai_output(full_text: str) -> str:
+    """Master cleanup for all AI provider outputs."""
+    # Remove accidental double backticks from stitched continuations
+    full_text = full_text.replace("```\n```", "").replace("``````", "")
+    # Remove continuation restart corruption
+    full_text = _dedup_continuation_restarts(full_text)
+    return full_text
+
+
+# ─────────────────────────────────────────────
 # Individual providers
 # ─────────────────────────────────────────────
 
 async def _call_openai(system: str, user: str, max_tokens: int = 8000) -> str:
     if not OPENAI_API_KEY:
         raise ValueError("No OpenAI API key")
+    msgs = [
+        {"role": "system", "content": system},
+        {"role": "user",   "content": user}
+    ]
+    full_text = ""
     async with httpx.AsyncClient(timeout=120.0) as client:
-        res = await client.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {OPENAI_API_KEY}",
-                     "Content-Type": "application/json"},
-            json={
-                "model": OPENAI_MODEL,
-                "max_tokens": max_tokens,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user",   "content": user}
-                ]
-            }
-        )
-        res.raise_for_status()
-        return res.json()["choices"][0]["message"]["content"]
+        while True:
+            res = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {OPENAI_API_KEY}",
+                         "Content-Type": "application/json"},
+                json={
+                    "model": OPENAI_MODEL,
+                    "max_tokens": max_tokens,
+                    "messages": msgs
+                }
+            )
+            res.raise_for_status()
+            data = res.json()
+            text = data["choices"][0]["message"]["content"]
+            finish_reason = data["choices"][0].get("finish_reason")
+            
+            # If this is a continuation, strip leading backticks from the incoming text
+            if len(msgs) > 2:
+                text = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", text.lstrip())
+                
+            full_text += text
+            
+            if finish_reason == "length" or full_text.count("```") % 2 != 0:
+                msgs.append({"role": "assistant", "content": text})
+                msgs.append({"role": "user", "content": "Your response was cut off. Please continue EXACTLY where you left off. Do NOT start with backticks, just continue the raw code directly."})
+                continue
+            else:
+                break
+                
+    return _clean_ai_output(full_text)
 
 
 async def _call_gemini(system: str, user: str, max_tokens: int = 8000) -> str:
@@ -51,37 +182,88 @@ async def _call_gemini(system: str, user: str, max_tokens: int = 8000) -> str:
         f"https://generativelanguage.googleapis.com/v1beta/models/"
         f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
     )
-    payload = {
-        "contents": [{"role": "user", "parts": [{"text": f"{system}\n\n{user}"}]}],
-        "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.7}
-    }
+    contents = [{"role": "user", "parts": [{"text": f"{system}\n\n{user}"}]}]
+    full_text = ""
     async with httpx.AsyncClient(timeout=120.0) as client:
-        res = await client.post(url, json=payload)
-        res.raise_for_status()
-        data = res.json()
-        return data["candidates"][0]["content"]["parts"][0]["text"]
+        while True:
+            payload = {
+                "contents": contents,
+                "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.7}
+            }
+            for attempt in range(4):
+                res = await client.post(url, json=payload)
+                if res.status_code == 429:
+                    wait_time = (attempt + 1) * 3
+                    print(f"[Gemini] 429 Rate Limit. Waiting {wait_time}s (attempt {attempt+1}/4)...")
+                    await asyncio.sleep(wait_time)
+                    continue
+                res.raise_for_status()
+                break
+            data = res.json()
+            
+            candidate = data.get("candidates", [{}])[0]
+            parts = candidate.get("content", {}).get("parts", [])
+            finish_reason = candidate.get("finishReason")
+            
+            text = parts[0].get("text", "") if parts else ""
+            
+            # If this is a continuation, strip leading backticks
+            if len(contents) > 1:
+                text = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", text.lstrip())
+                
+            full_text += text
+            
+            if finish_reason == "MAX_TOKENS" or full_text.count("```") % 2 != 0:
+                contents.append({"role": "model", "parts": [{"text": text}]})
+                contents.append({"role": "user", "parts": [{"text": "Your response was cut off. Please continue EXACTLY where you left off. Do NOT start with backticks, just continue the raw code directly."}]})
+                continue
+            else:
+                break
+                
+    return _clean_ai_output(full_text)
 
 
 async def _call_claude(system: str, user: str, max_tokens: int = 8000) -> str:
     if not ANTHROPIC_API_KEY:
         raise ValueError("No Anthropic API key")
+    msgs = [{"role": "user", "content": user}]
+    full_text = ""
     async with httpx.AsyncClient(timeout=180.0) as client:
-        res = await client.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": CLAUDE_MODEL,
-                "max_tokens": max_tokens,
-                "system": system,
-                "messages": [{"role": "user", "content": user}]
-            }
-        )
-        res.raise_for_status()
-        return res.json()["content"][0]["text"]
+        while True:
+            res = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": ANTHROPIC_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": CLAUDE_MODEL,
+                    "max_tokens": max_tokens,
+                    "system": system,
+                    "messages": msgs
+                }
+            )
+            res.raise_for_status()
+            data = res.json()
+            text = data["content"][0]["text"]
+            
+            stop_reason = data.get("stop_reason")
+            
+            # If this is a continuation, strip leading backticks
+            if len(msgs) > 1:
+                text = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", text.lstrip())
+                
+            full_text += text
+            
+            if stop_reason == "max_tokens" or full_text.count("```") % 2 != 0:
+                msgs.append({"role": "assistant", "content": text})
+                msgs.append({"role": "user", "content": "Your response was cut off. Please continue EXACTLY where you left off. Do NOT start with backticks, just continue the raw code directly."})
+                continue
+            else:
+                break
+                
+    return _clean_ai_output(full_text)
 
 
 async def _call_pollinations(system: str, user: str, max_tokens: int = 8000) -> str:
@@ -121,6 +303,10 @@ async def _call_pollinations(system: str, user: str, max_tokens: int = 8000) -> 
                 except Exception:
                     pass
                     
+            # If this is a continuation, strip leading backticks
+            if len(msgs) > 2:
+                text = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", text.lstrip())
+                
             full_text += text
             
             # If the number of backticks is odd, the code block is unclosed (truncated)
@@ -135,9 +321,7 @@ async def _call_pollinations(system: str, user: str, max_tokens: int = 8000) -> 
             else:
                 break
                 
-        # Cleanup any accidental double backticks from stitched continuations
-        full_text = full_text.replace("```\n```", "")
-        return full_text
+        return _clean_ai_output(full_text)
 
 
 # ─────────────────────────────────────────────
@@ -185,6 +369,56 @@ async def call_ai(system: str, user: str, max_tokens: int = 12000,
     raise RuntimeError(f"All AI providers failed. Last error: {last_err}")
 
 
+async def stream_ai(system: str, user: str, max_tokens: int = 4000):
+    """
+    Async generator yielding text chunks as they arrive from the active LLM.
+    Supports Anthropic, Gemini, OpenAI, and Pollinations streaming.
+    """
+    if ANTHROPIC_API_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                async with client.stream(
+                    "POST",
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": ANTHROPIC_API_KEY,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json",
+                    },
+                    json={
+                        "model": CLAUDE_MODEL,
+                        "max_tokens": max_tokens,
+                        "system": system,
+                        "messages": [{"role": "user", "content": user}],
+                        "stream": True
+                    }
+                ) as response:
+                    async for line in response.aiter_lines():
+                        if line.startswith("data: "):
+                            data_str = line[6:].strip()
+                            if data_str == "[DONE]":
+                                break
+                            try:
+                                payload = json.loads(data_str)
+                                if payload.get("type") == "content_block_delta":
+                                    text_chunk = payload.get("delta", {}).get("text", "")
+                                    if text_chunk:
+                                        yield text_chunk
+                            except Exception:
+                                pass
+            return
+        except Exception as err:
+            print(f"[AI Brain Stream] Claude stream failed: {err}, falling back to call_ai")
+
+    # Fallback to standard response with chunked yield
+    full_text = await call_ai(system, user, max_tokens)
+    words = full_text.split(" ")
+    for i in range(0, len(words), 3):
+        chunk = " ".join(words[i:i+3]) + (" " if i+3 < len(words) else "")
+        yield chunk
+        await asyncio.sleep(0.01)
+
+
 async def call_ai_json(system: str, user: str) -> dict:
     """Call AI and parse JSON response, with retry."""
     for attempt in range(3):
@@ -209,3 +443,4 @@ def get_active_provider() -> str:
     if GEMINI_API_KEY:    return f"Gemini ({GEMINI_MODEL})"
     if ANTHROPIC_API_KEY: return f"Claude ({CLAUDE_MODEL})"
     return "Pollinations (free)"
+

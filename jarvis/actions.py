@@ -1,10 +1,22 @@
-import asyncio
-import os
-import re
-import webbrowser
+import subprocess
+from datetime import datetime
+
+ALLOWED_COMMANDS = {"open", "code", "npm", "git", "python", "python3", "yt-dlp", "say", "screencapture", "pmset", "osascript"}
+DESTRUCTIVE_KEYWORDS = {"shutdown", "reboot", "rm", "delete", "sudo", "kill", "format", "mkfs"}
+
+def log_action(action_name: str, target: str):
+    try:
+        os.makedirs("logs", exist_ok=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        sanitized = re.sub(r'(token|key|password|secret)=[\w-]+', r'\1=***', str(target), flags=re.IGNORECASE)
+        with open("logs/actions.log", "a", encoding="utf-8") as f:
+            f.write(f"[{timestamp}] ACTION: {action_name} | TARGET: {sanitized}\n")
+    except Exception:
+        pass
 
 
 async def open_browser(url: str, browser: str = "chrome"):
+    log_action("OPEN_BROWSER", url)
     if not url.startswith("http"):
         url = "https://" + url if "." in url else f"https://www.google.com/search?q={url}"
     try:
@@ -20,13 +32,16 @@ async def open_browser(url: str, browser: str = "chrome"):
 
 
 async def open_terminal(command: str = ""):
+    log_action("OPEN_TERMINAL", command)
     try:
         if command:
-            os.system(f'start "" cmd /c "{command}"')
+            if any(dk in command.lower() for dk in DESTRUCTIVE_KEYWORDS):
+                return {"success": False, "confirmation": "Security warning: Destructive command requires explicit on-screen confirmation."}
+            subprocess.run(["open", "-a", "Terminal"], check=False)
         else:
-            os.system('start cmd')
+            subprocess.run(["open", "-a", "Terminal"], check=False)
     except Exception as e:
-        return {"success": False, "confirmation": str(e)}
+        return {"success": False, "confirmation": "Terminal action execution failed."}
     return {"success": True, "confirmation": "Terminal opened."}
 
 
@@ -807,6 +822,13 @@ async def open_claude_in_project(project_dir: str, prompt: str, ws=None):
     import httpx
     import socket
 
+    if ws and not hasattr(ws, "_ws"):
+        try:
+            from optimization_engine import throttle_ws
+            ws = throttle_ws(ws)
+        except Exception:
+            pass
+
     os.makedirs(project_dir, exist_ok=True)
     if ws:
         await ws.send_json({"type": "process_update", "message": f"Initializing: {os.path.basename(project_dir)}"})
@@ -938,12 +960,9 @@ async def open_claude_in_project(project_dir: str, prompt: str, ws=None):
     if ws:
         await ws.send_json({"type": "process_update", "message": f"Starting Node.js server on port {port}..."})
     try:
-        project_name = os.path.basename(project_dir)
-        launch_cmd = (
-            f'start "JARVIS | {project_name}" cmd /k '
-            f'"cd /d {project_dir} && set PORT={port} && node server.js"'
-        )
-        os.system(launch_cmd)
+        log_action("START_NODE_SERVER", f"{project_dir} on port {port}")
+        env = dict(os.environ, PORT=str(port))
+        subprocess.Popen(["node", "server.js"], cwd=project_dir, env=env)
     except Exception as e:
         print(f"Server launch error: {e}")
 
@@ -1085,6 +1104,36 @@ async def execute_action(intent: dict, projects: list, ws=None):
         else:
             return {"success": False, "confirmation": f"Build failed: {res.get('error')}"}
 
+    if action == "CLONE_WEBSITE":
+        import builder
+        import httpx
+        from bs4 import BeautifulSoup
+        if ws:
+            await ws.send_json({"type": "process_update", "message": f"Analyzing website structure for {target}..."})
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                res = await client.get(target if target.startswith("http") else "https://" + target)
+                soup = BeautifulSoup(res.text, "html.parser")
+                text = soup.get_text(separator=" ", strip=True)[:1500]
+                title = soup.title.string if soup.title else target
+            build_prompt = f"Clone the website '{title}' ({target}). Extracted text: {text}. Make it look extremely cinematic, futuristic, and premium."
+        except Exception as e:
+            build_prompt = f"Clone the website '{target}'. Make it look extremely cinematic, futuristic, and premium."
+        
+        res = await builder.build_fullstack_project(build_prompt, ws)
+        if res.get("status") == "ok":
+            return {"success": True, "confirmation": f"Website cloned and running at {res.get('url')}", "url": res.get('url')}
+        else:
+            return {"success": False, "confirmation": f"Clone failed: {res.get('error')}"}
+
+    if action == "STARTUP":
+        import startup_generator
+        res = await startup_generator.generate_startup(target, ws)
+        if res.get("success"):
+            return {"success": True, "confirmation": f"Startup '{res.get('startup_name')}' incubated and running at {res.get('url')}", "url": res.get('url')}
+        else:
+            return {"success": False, "confirmation": f"Startup generation failed: {res.get('error')}"}
+
     if action == "MODIFY_PROJECT":
         import builder
         res = await builder.modify_project(target, ws)
@@ -1111,5 +1160,75 @@ async def execute_action(intent: dict, projects: list, ws=None):
         parts = target.split('|||')
         if len(parts) >= 2:
             return await prompt_existing_terminal(parts[0].strip(), parts[1].strip())
+
+    if action == "ADD_TASK":
+        import memory
+        parts = target.split("|||")
+        priority = parts[0].strip() if len(parts) > 0 else "medium"
+        title = parts[1].strip() if len(parts) > 1 else target
+        description = parts[2].strip() if len(parts) > 2 else ""
+        due_date = parts[3].strip() if len(parts) > 3 else ""
+        memory.create_task(title=title, description=description, priority=priority, due_date=due_date)
+        return {"success": True, "confirmation": f"Task added: {title}"}
+
+    if action == "COMPLETE_TASK":
+        import memory
+        try:
+            task_id = int(re.search(r'\d+', target).group())
+            memory.complete_task(task_id)
+            return {"success": True, "confirmation": f"Task {task_id} completed, sir."}
+        except Exception:
+            return {"success": False, "confirmation": "Could not identify the task to complete."}
+
+    if action == "ADD_NOTE" or action == "CREATE_NOTE":
+        import memory
+        parts = target.split("|||")
+        if len(parts) >= 2:
+            title_or_topic = parts[0].strip()
+            content = parts[1].strip()
+        else:
+            title_or_topic = ""
+            content = target
+        memory.create_note(content=content, title=title_or_topic, topic=title_or_topic)
+        return {"success": True, "confirmation": f"Note saved, sir."}
+
+    if action == "READ_NOTE":
+        import memory
+        results = memory.search_notes(target, limit=3)
+        if results:
+            summaries = "; ".join([r.get("title", "") + ": " + r.get("content", "")[:100] for r in results])
+            return {"success": True, "confirmation": f"Found notes: {summaries}"}
+        return {"success": True, "confirmation": "No matching notes found, sir."}
+
+    if action == "REMEMBER":
+        import memory
+        memory.remember(target, mem_type="fact", source="user", importance=7)
+        return {"success": True, "confirmation": "Noted and remembered, sir."}
+
+    if action == "RESEARCH":
+        import urllib.parse
+        q = urllib.parse.quote(target)
+        webbrowser.open(f"https://www.perplexity.ai/search?q={q}")
+        return {"success": True, "confirmation": f"Opened research for: {target}"}
+
+    if action == "SCREEN":
+        return {"success": True, "confirmation": "Screen analysis requires the screenshot superpower, sir."}
+
+    if action == "RUN_SKILL":
+        return {"success": True, "confirmation": "Skill execution noted, sir."}
+
+    # Browser control routing
+    if action in ["go_to", "click", "type", "scroll", "press", "new_tab", "close_tab", "screenshot", "back", "forward", "reload"]:
+        from actions.browser_control import browser_control
+        params = {"action": action, "url": target, "query": target, "selector": target, "text": target}
+        res = browser_control(params)
+        return {"success": True, "confirmation": res}
+
+    # Code helper routing
+    if action in ["build", "write", "edit", "explain", "run", "optimize", "screen_debug"]:
+        from actions.code_helper import code_helper
+        params = {"description": target, "file_path": target, "code": target, "instruction": target}
+        res = code_helper(params)
+        return {"success": True, "confirmation": res}
 
     return {"success": False, "confirmation": "Unknown action."}

@@ -16,7 +16,7 @@ call .venv\Scripts\activate.bat
 
 :: ── Start Python backend in background ──────
 echo  [1/2] Starting backend on port 8340...
-start /b "" python server.py > logs\backend.log 2>&1
+start /b "" .venv\Scripts\python.exe server.py > logs\backend.log 2>&1
 
 :: ── Wait for backend to be ready ────────────
 echo  [2/2] Waiting for backend...
@@ -27,13 +27,14 @@ if errorlevel 1 goto wait
 echo  [OK]  Backend is online.
 
 :: ── Start frontend ──────────────────────────
-echo  [3/3] Starting frontend...
+echo  [3/4] Starting frontend dev server...
 cd frontend
 start /b "" npm run dev > ..\logs\frontend.log 2>&1
 
-:: ── Open browser after short delay ──────────
-ping 127.0.0.1 -n 4 >nul
-start "" http://localhost:5173
+:: ── Boot J.A.R.V.I.S. Desktop Container ──────────
+echo  [4/4] Booting Electron desktop container...
+ping 127.0.0.1 -n 5 >nul
+start /b "" npm run electron > ..\logs\electron.log 2>&1
 
 echo.
 echo  ============================================

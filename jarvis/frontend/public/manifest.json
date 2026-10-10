@@ -1,0 +1,24 @@
+{
+  "name": "J.A.R.V.I.S. Mobile OS",
+  "short_name": "JARVIS",
+  "description": "Stark Industries Personal AI Assistant",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000710",
+  "theme_color": "#000710",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

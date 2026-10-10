@@ -16,6 +16,8 @@ from typing import Optional, Dict, List, Any
 # ─────────────────────────────────────────────
 from ai_brain import call_ai, call_ai_json, get_active_provider
 from image_gen import generate_project_images
+from code_repair import repair_file_dict, repair_project_tree, validate_frontend
+from project_quality import is_template_stub, parse_ai_code_blocks
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 PROJECTS_DIR      = Path(os.path.expanduser("~/jarvis-projects"))
@@ -85,7 +87,18 @@ async def _ws_say(ws, text: str):
         except Exception:
             pass
 
+def _ensure_throttled_ws(ws):
+    if ws and not hasattr(ws, "_ws"):
+        try:
+            from optimization_engine import throttle_ws
+            return throttle_ws(ws)
+        except Exception:
+            pass
+    return ws
+
+
 async def _ws_status(ws, state: str, detail: str = ""):
+    ws = _ensure_throttled_ws(ws)
     if ws:
         try:
             await ws.send_json({"type": "builder_status", "state": state, "detail": detail})
@@ -95,20 +108,23 @@ async def _ws_status(ws, state: str, detail: str = ""):
 
 
 async def _stream_live_code(ws, text: str):
-    if not ws: return
+    if not ws:
+        return
+    ws = _ensure_throttled_ws(ws)
     try:
         await ws.send_json({'type': 'code_stream_start'})
-        chunk_size = 50
+        chunk_size = 120
         for i in range(0, len(text), chunk_size):
-            chunk = text[i:i+chunk_size]
+            chunk = text[i:i + chunk_size]
             await ws.send_json({'type': 'code_stream_chunk', 'text': chunk})
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0.04)
         await ws.send_json({'type': 'code_stream_end'})
     except Exception:
         pass
 
 async def _ws_log(ws, line: str):
     """Stream build log line to frontend."""
+    ws = _ensure_throttled_ws(ws)
     if ws:
         try:
             await ws.send_json({"type": "build_log", "line": line})
@@ -153,10 +169,10 @@ Stack selection rules:
             "title":       description[:40].title(),
             "stack":       "react_fastapi",
             "db":          "sqlite",
-            "features":    ["dashboard", "crud", "auth"],
+            "features":    ["landing", "catalog", "contact", "api"],
             "theme":       "modern dark premium",
-            "pages":       ["/", "/dashboard", "/about"],
-            "api_routes":  ["/api/data", "/api/health"],
+            "pages":       ["/", "/services", "/about", "/contact"],
+            "api_routes":  ["/api/health", "/api/services", "/api/contact"],
             "description": description[:100],
         }
 
@@ -164,6 +180,16 @@ Stack selection rules:
 # Step 2 — Generate All Project Files
 # ─────────────────────────────────────────────
 import templates
+
+
+def _apply_domain_fallback(base_files: Dict[str, str], domain: str, title: str, description: str) -> None:
+    """Replace App + backend with a full real website for this domain."""
+    from fallback_education import get_fallback_app
+
+    fb = get_fallback_app(domain, title, description)
+    base_files["frontend/src/App.tsx"] = fb["app"]
+    base_files["backend/main.py"] = fb["backend"]
+
 
 async def generate_project_files(plan: dict, original_description: str, ws=None) -> Dict[str, str]:
     """Generate domain-specific full-stack files with 3D animations and AI images."""
@@ -197,14 +223,26 @@ async def generate_project_files(plan: dict, original_description: str, ws=None)
         # We use a single prompt to get the full project, relying on the upgraded token limits and continuation logic
         app_raw = await call_ai(system_prompt, user_prompt, max_tokens=16000)
         await _stream_live_code(ws, app_raw)
-        
-        # Parse all blocks with filename="path/to/file.ext"
-        blocks = re.findall(r'```(?:[a-zA-Z0-9_-]*)[ \t]*filename=["\']?(.*?)["\']?\n(.*?)```', app_raw, re.DOTALL)
-        
+
+        blocks = parse_ai_code_blocks(app_raw)
+        if not blocks:
+            blocks = {
+                k.strip(): v.strip()
+                for k, v in re.findall(
+                    r'```(?:[a-zA-Z0-9_-]*)[ \t]*filename=["\']?(.*?)["\']?\n(.*?)```',
+                    app_raw,
+                    re.DOTALL,
+                )
+            }
+
         if blocks:
-            for filepath, content in blocks:
-                base_files[filepath.strip()] = content.strip()
-            await _ws_log(ws, f"✓ AI perfectly generated {len(blocks)} files dynamically!")
+            for filepath, content in blocks.items():
+                base_files[filepath] = content
+            await _ws_log(ws, f"✓ AI generated {len(blocks)} files dynamically!")
+            app_tsx = base_files.get("frontend/src/App.tsx", "")
+            if is_template_stub(app_tsx):
+                await _ws_log(ws, "⚠ AI returned a generic dashboard stub — using real website fallback...")
+                _apply_domain_fallback(base_files, domain, plan.get("title", ""), original_description)
         else:
             raise ValueError("No valid code blocks with filenames found in AI response.")
 
@@ -214,16 +252,23 @@ async def generate_project_files(plan: dict, original_description: str, ws=None)
         await _ws_log(ws, f"⚠ AI generation failed ({str(e)[:60]}). Retrying once...")
         try:
             app_raw = await call_ai(system_prompt, user_prompt, max_tokens=16000)
-            blocks = re.findall(r'```(?:[a-zA-Z0-9_-]*)[ \t]*filename=["\']?(.*?)["\']?\n(.*?)```', app_raw, re.DOTALL)
+            blocks = parse_ai_code_blocks(app_raw)
             if blocks:
-                for filepath, content in blocks:
-                    base_files[filepath.strip()] = content.strip()
+                for filepath, content in blocks.items():
+                    base_files[filepath] = content
                 await _ws_log(ws, f"✓ AI recovered and generated {len(blocks)} files!")
+                if is_template_stub(base_files.get("frontend/src/App.tsx", "")):
+                    _apply_domain_fallback(base_files, domain, plan.get("title", ""), original_description)
             else:
                 raise ValueError("Still no valid filename blocks found.")
         except Exception as retry_e:
-            await _ws_log(ws, f"❌ AI failed completely: {str(retry_e)[:60]}.")
-            raise Exception("Strict Mode: AI generation failed. Fallback templates are DISABLED. Please try building again.")
+            await _ws_log(ws, f"⚠ AI unavailable — building full website from domain scaffold [{domain}]...")
+            try:
+                _apply_domain_fallback(base_files, domain, plan.get("title", ""), original_description)
+                await _ws_log(ws, f"✓ Real {domain} website ready (landing, services, API data)")
+            except Exception as fallback_e:
+                print("FALLBACK ERROR:", fallback_e)
+                raise Exception(f"AI generation and website fallback failed: {str(fallback_e)}")
 
     base_files["README.md"] = (
         f"# {plan.get('title', 'Project')}\n\n{original_description}\n\n"
@@ -231,7 +276,11 @@ async def generate_project_files(plan: dict, original_description: str, ws=None)
         f"Generated by ANTIGRAVITY JARVIS.\n"
         f"AI Provider: {get_active_provider()}\n"
     )
-    return base_files
+    repaired = repair_file_dict(base_files)
+    fix_count = sum(1 for k in base_files if repaired.get(k) != base_files.get(k))
+    if fix_count:
+        await _ws_log(ws, f"🔧 Auto-repaired syntax in {fix_count} generated file(s)")
+    return repaired
 
 
 def _nextjs_instructions(plan: dict) -> str:
@@ -371,6 +420,7 @@ def _rmtree_force(path: Path):
 
 def scaffold_project(project_name: str, files: Dict[str, str]) -> Path:
     """Write all generated files to ~/jarvis-projects/<name>/"""
+    files = repair_file_dict(files)
     project_path = PROJECTS_DIR / project_name
     if project_path.exists():
         _force_kill_project_procs(project_path)
@@ -556,11 +606,30 @@ async def _wait_for_backend(port: int, retries: int = 15) -> bool:
     return False
 
 
+async def _prepare_frontend_for_serve(project_path: Path, stack: str, ws=None) -> None:
+    """Repair common AI syntax errors and verify TypeScript before Vite starts."""
+    if stack != "react_fastapi":
+        return
+    logs = repair_project_tree(project_path)
+    for msg in logs:
+        await _ws_log(ws, f"🔧 {msg}")
+    ok, err = await validate_frontend(project_path)
+    if ok:
+        return
+    await _ws_log(ws, "⚠ TypeScript errors detected — running second repair pass...")
+    repair_project_tree(project_path)
+    ok2, err2 = await validate_frontend(project_path)
+    if not ok2 and err2:
+        snippet = err2.strip().splitlines()[-8:]
+        await _ws_log(ws, "TS check: " + " | ".join(snippet)[:300])
+
+
 async def start_dev_server(project_name: str, project_path: Path, stack: str, ws=None) -> Optional[str]:
     """Start backend first (wait for health), then frontend."""
     global _current_project
 
     await stop_dev_server(project_name, ws)
+    await _prepare_frontend_for_serve(project_path, stack, ws)
 
     stack_cfg = STACKS.get(stack, {})
     port    = stack_cfg.get("port", 5174)
@@ -982,10 +1051,7 @@ async def build_fullstack_project(description: str, ws=None) -> dict:
         # ── Phase 3: Scaffold ──────────────────────────────────────────
         project_path = await _phase(
             "scaffolding", "Writing files to disk...",
-            asyncio.coroutine(lambda: scaffold_project(project_name, files))()
-            if False else asyncio.get_event_loop().run_in_executor(
-                None, scaffold_project, project_name, files
-            )
+            asyncio.to_thread(scaffold_project, project_name, files)
         )
         await _ws_log(ws, f"✓ Scaffolded to {project_path}")
 
@@ -1140,8 +1206,12 @@ async def modify_project(prompt: str, ws=None) -> dict:
         
     current_code = app_tsx.read_text(encoding="utf-8")
     
-    system = "You are an expert React developer. You must modify the provided code according to the user's request. Output ONLY the new valid code in a JSON object with the key 'frontend/src/App.tsx'. NO REASONING."
-    user_prompt = f"User request: {prompt}\n\nCurrent code:\n{current_code[:8000]}\n\nGenerate ONLY a JSON object containing the modified code under the key 'frontend/src/App.tsx'."
+    system = """You are JARVIS, an elite AI full-stack architect. You are editing an existing React 3D/Framer Motion application.
+Maintain the Iron Man HUD / Tesla premium aesthetic (glassmorphism, dark themes, neon glows).
+Output ONLY the new valid code in a JSON object with the key 'frontend/src/App.tsx'. NO REASONING.
+DO NOT remove existing 3D components or animations unless explicitly asked.
+DO NOT use markdown outside the JSON."""
+    user_prompt = f"User request: {prompt}\n\nCurrent code:\n{current_code[:12000]}\n\nGenerate ONLY a JSON object containing the ENTIRE modified code under the key 'frontend/src/App.tsx'."
     
     try:
         raw = await _call_claude(system, user_prompt, max_tokens=15000)

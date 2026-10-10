@@ -2,9 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>JARVIS — Just A Rather Very Intelligent System</title>
-  <meta name="description" content="J.A.R.V.I.S. — Stark Industries AI Personal Assistant. Advanced holographic interface powered by the Arc Reactor." />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>J.A.R.V.I.S. OS — Evolved</title>
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#000710" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="apple-touch-icon" href="/icon-192.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;500;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
@@ -12,867 +16,439 @@
 
   <style>
     *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
-
-    /* ─────────────────────────────────────────
-       GATE SCREEN  (click to enter)
-    ───────────────────────────────────────── */
-    #gate-screen {
-      position: fixed; inset: 0; z-index: 99999;
-      background: #000;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      gap: 32px; cursor: pointer;
-    }
-
-    #gate-screen .gate-logo {
-      font-family: 'Orbitron', sans-serif;
-      font-size: clamp(32px, 7vw, 80px);
-      font-weight: 900;
-      color: transparent;
-      background: linear-gradient(135deg, #00BFFF 0%, #0077aa 50%, #00BFFF 100%);
-      background-size: 200% 200%;
-      -webkit-background-clip: text;
-      background-clip: text;
-      letter-spacing: 14px;
-      text-transform: uppercase;
-      animation: gradientShift 3s ease infinite;
-      filter: drop-shadow(0 0 30px rgba(0,191,255,0.6));
-    }
-
-    @keyframes gradientShift {
-      0%   { background-position: 0% 50%; }
-      50%  { background-position: 100% 50%; }
-      100% { background-position: 0% 50%; }
-    }
-
-    #gate-screen .gate-sub {
-      font-family: 'Rajdhani', sans-serif;
-      font-size: clamp(10px, 2vw, 14px);
-      color: rgba(0,191,255,0.5);
-      letter-spacing: 8px;
-      text-transform: uppercase;
-    }
-
-    #gate-screen .gate-btn {
-      margin-top: 20px;
-      padding: 14px 48px;
-      border: 1px solid rgba(0,191,255,0.5);
-      border-radius: 2px;
-      background: transparent;
-      color: #00BFFF;
-      font-family: 'Orbitron', sans-serif;
-      font-size: 13px;
-      letter-spacing: 5px;
-      cursor: pointer;
-      position: relative;
-      overflow: hidden;
-      transition: color 0.3s, border-color 0.3s;
-    }
-
-    #gate-screen .gate-btn::before {
-      content: '';
-      position: absolute; left: -100%; top: 0;
-      width: 100%; height: 100%;
-      background: linear-gradient(90deg, transparent, rgba(0,191,255,0.15), transparent);
-      transition: left 0.5s;
-    }
-    #gate-screen .gate-btn:hover::before { left: 100%; }
-    #gate-screen .gate-btn:hover {
-      border-color: rgba(0,191,255,0.9);
-      box-shadow: 0 0 30px rgba(0,191,255,0.2), inset 0 0 30px rgba(0,191,255,0.05);
-    }
-
-    /* Animated scan lines on gate */
-    #gate-screen::after {
-      content: '';
-      position: absolute; inset: 0;
-      background: repeating-linear-gradient(
-        0deg, transparent, transparent 3px,
-        rgba(0,191,255,0.025) 3px, rgba(0,191,255,0.025) 4px
-      );
-      pointer-events: none;
-      animation: scanScroll 12s linear infinite;
-    }
-    @keyframes scanScroll { to { background-position: 0 200px; } }
-
-    /* Pulsing corner brackets */
-    #gate-screen .bracket {
-      position: absolute;
-      width: 50px; height: 50px;
-      opacity: 0.5;
-      animation: bracketPulse 2s ease-in-out infinite;
-    }
-    #gate-screen .bracket.tl { top:20px; left:20px; border-top:1.5px solid #00BFFF; border-left:1.5px solid #00BFFF; }
-    #gate-screen .bracket.tr { top:20px; right:20px; border-top:1.5px solid #00BFFF; border-right:1.5px solid #00BFFF; }
-    #gate-screen .bracket.bl { bottom:20px; left:20px; border-bottom:1.5px solid #00BFFF; border-left:1.5px solid #00BFFF; }
-    #gate-screen .bracket.br { bottom:20px; right:20px; border-bottom:1.5px solid #00BFFF; border-right:1.5px solid #00BFFF; }
+    #gate-screen { position:fixed;inset:0;z-index:99999;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:32px;cursor:pointer; }
+    .gate-logo { font-family:'Orbitron',sans-serif;font-size:clamp(32px,7vw,80px);font-weight:900;color:transparent;background:linear-gradient(135deg,#00BFFF 0%,#0077aa 50%,#00BFFF 100%);background-size:200% 200%;-webkit-background-clip:text;background-clip:text;letter-spacing:14px;text-transform:uppercase;animation:gradientShift 3s ease infinite;filter:drop-shadow(0 0 30px rgba(0,191,255,0.6)); }
+    @keyframes gradientShift { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+    .gate-sub { font-family:'Rajdhani',sans-serif;font-size:clamp(10px,2vw,14px);color:rgba(0,191,255,0.5);letter-spacing:8px;text-transform:uppercase; }
+    .gate-btn { margin-top:20px;padding:14px 48px;border:1px solid rgba(0,191,255,0.5);border-radius:2px;background:transparent;color:#00BFFF;font-family:'Orbitron',sans-serif;font-size:13px;letter-spacing:5px;cursor:pointer;position:relative;overflow:hidden;transition:color 0.3s,border-color 0.3s; }
+    .gate-btn:hover { border-color:rgba(0,191,255,0.9);box-shadow:0 0 30px rgba(0,191,255,0.2); }
+    #gate-screen::after { content:'';position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,191,255,0.025) 3px,rgba(0,191,255,0.025) 4px);pointer-events:none; }
+    .bracket { position:absolute;width:50px;height:50px;opacity:0.5;animation:bracketPulse 2s ease-in-out infinite; }
+    .bracket.tl{top:20px;left:20px;border-top:1.5px solid #00BFFF;border-left:1.5px solid #00BFFF}
+    .bracket.tr{top:20px;right:20px;border-top:1.5px solid #00BFFF;border-right:1.5px solid #00BFFF}
+    .bracket.bl{bottom:20px;left:20px;border-bottom:1.5px solid #00BFFF;border-left:1.5px solid #00BFFF}
+    .bracket.br{bottom:20px;right:20px;border-bottom:1.5px solid #00BFFF;border-right:1.5px solid #00BFFF}
     @keyframes bracketPulse { 0%,100%{opacity:0.3} 50%{opacity:0.8} }
-
-    /* Active pulse ring */
-    #gate-ring {
-      width: 160px; height: 160px;
-      border: 1px solid rgba(0,191,255,0.2);
-      border-radius: 50%;
-      position: relative;
-      animation: outerRingRotate 8s linear infinite;
-    }
-    #gate-ring::before,#gate-ring::after {
-      content:''; position:absolute; border-radius:50%;
-    }
-    #gate-ring::before {
-      inset: 15px;
-      border: 1px solid rgba(0,191,255,0.3);
-      animation: outerRingRotate 5s linear infinite reverse;
-    }
-    #gate-ring::after {
-      inset: 35px;
-      border: 1.5px solid rgba(0,191,255,0.5);
-      animation: outerRingRotate 3s linear infinite;
-    }
-    @keyframes outerRingRotate { to { transform: rotate(360deg); } }
-
-    /* Center arc dot */
-    #gate-dot {
-      position: absolute;
-      top: 50%; left: 50%;
-      transform: translate(-50%,-50%);
-      width: 14px; height: 14px;
-      border-radius: 50%;
-      background: radial-gradient(circle, #00BFFF 0%, rgba(0,191,255,0.3) 60%, transparent 100%);
-      box-shadow: 0 0 20px rgba(0,191,255,0.9), 0 0 40px rgba(0,191,255,0.4);
-      animation: dotPulse 2s ease-in-out infinite;
-    }
+    #gate-ring { width:160px;height:160px;border:1px solid rgba(0,191,255,0.2);border-radius:50%;position:relative;animation:outerRingRotate 8s linear infinite; }
+    #gate-ring::before,#gate-ring::after { content:'';position:absolute;border-radius:50%; }
+    #gate-ring::before { inset:15px;border:1px solid rgba(0,191,255,0.3);animation:outerRingRotate 5s linear infinite reverse; }
+    #gate-ring::after { inset:35px;border:1.5px solid rgba(0,191,255,0.5);animation:outerRingRotate 3s linear infinite; }
+    @keyframes outerRingRotate { to{transform:rotate(360deg)} }
+    #gate-dot { position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:14px;height:14px;border-radius:50%;background:radial-gradient(circle,#00BFFF 0%,rgba(0,191,255,0.3) 60%,transparent 100%);box-shadow:0 0 20px rgba(0,191,255,0.9),0 0 40px rgba(0,191,255,0.4);animation:dotPulse 2s ease-in-out infinite; }
     @keyframes dotPulse { 0%,100%{transform:translate(-50%,-50%) scale(1)} 50%{transform:translate(-50%,-50%) scale(1.4)} }
-
-    /* ─────────────────────────────────────────
-       VIDEO INTRO SCREEN
-    ───────────────────────────────────────── */
-    #intro-wrap {
-      position: fixed; inset: 0; z-index: 9998;
-      background: #000;
-      display: none;
-      overflow: hidden;
-    }
-
-    /* Letterbox bars */
-    #intro-wrap .lbx-top,
-    #intro-wrap .lbx-bot {
-      position: absolute; left: 0; right: 0;
-      height: 60px;
-      background: #000;
-      z-index: 5;
-      transition: height 0.8s cubic-bezier(0.76, 0, 0.24, 1);
-    }
-    #intro-wrap .lbx-top { top: 0; }
-    #intro-wrap .lbx-bot { bottom: 0; }
-    #intro-wrap.open .lbx-top,
-    #intro-wrap.open .lbx-bot { height: 0px; }
-
-    #intro-video {
-      width: 100%; height: 100%;
-      object-fit: cover;
-      display: block;
-      /* GPU-accelerated crisp rendering */
-      will-change: transform;
-      transform: translateZ(0);
-      image-rendering: auto;
-      filter: none;
-      backface-visibility: hidden;
-    }
-
-    /* CRT-style scanlines — subtle, not heavy */
-    #intro-wrap::before {
-      content: '';
-      position: absolute; inset: 0; z-index: 4;
-      background: repeating-linear-gradient(
-        0deg, transparent, transparent 2px,
-        rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 3px
-      );
-      pointer-events: none;
-    }
-
-    /* Vignette */
-    #intro-wrap::after {
-      content: ''; position: absolute; inset: 0; z-index: 4;
-      background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.65) 100%);
-      pointer-events: none;
-    }
-
-    /* HUD overlay on video */
-    #intro-hud {
-      position: absolute; inset: 0; z-index: 6;
-      pointer-events: none;
-    }
-    .ihud-corner {
-      position: absolute; width: 55px; height: 55px;
-      opacity: 0; transition: opacity 1s ease 0.6s;
-    }
-    .ihud-corner.tl { top:18px;left:18px; border-top:1.5px solid #00BFFF; border-left:1.5px solid #00BFFF; }
-    .ihud-corner.tr { top:18px;right:18px; border-top:1.5px solid #00BFFF; border-right:1.5px solid #00BFFF; }
-    .ihud-corner.bl { bottom:18px;left:18px; border-bottom:1.5px solid #00BFFF; border-left:1.5px solid #00BFFF; }
-    .ihud-corner.br { bottom:18px;right:18px; border-bottom:1.5px solid #00BFFF; border-right:1.5px solid #00BFFF; }
-    #intro-wrap.open .ihud-corner { opacity: 0.7; }
-
-    #intro-status-bar {
-      position: absolute; bottom: 28px; left: 50%;
-      transform: translateX(-50%);
-      z-index: 7;
-      display: flex; flex-direction: column; align-items: center; gap: 6px;
-      opacity: 0; transition: opacity 0.8s ease 1s;
-      pointer-events: none;
-    }
-    #intro-wrap.open #intro-status-bar { opacity: 1; }
-
-    #intro-status-bar .ibar-text {
-      font-family: 'Orbitron', sans-serif;
-      font-size: 10px; letter-spacing: 5px; color: rgba(0,191,255,0.8);
-      text-transform: uppercase;
-    }
-    #intro-status-bar .ibar-line {
-      width: 200px; height: 1px;
-      background: rgba(0,191,255,0.2);
-      position: relative; overflow: hidden;
-    }
-    #intro-status-bar .ibar-line::after {
-      content: '';
-      position: absolute; top:0; left:-50%;
-      width: 50%; height: 100%;
-      background: linear-gradient(90deg, transparent, #00BFFF, transparent);
-      animation: barSweep 2s ease-in-out infinite;
-    }
-    @keyframes barSweep { to { left: 150%; } }
-
-    .iblink { animation: iblink 1.1s step-start infinite; }
-    @keyframes iblink { 50%{ opacity:0; } }
-
-    /* ─────────────────────────────────────────
-       TRANSITION LAYER
-    ───────────────────────────────────────── */
-    #trans-layer {
-      position: fixed; inset: 0; z-index: 9000;
-      display: none; background: #000;
-    }
-    #trans-canvas {
-      position: absolute; inset: 0;
-      width: 100%; height: 100%;
-    }
-
-    /* JARVIS boot title over transition */
-    #trans-overlay {
-      position: absolute; inset: 0;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      gap: 18px; pointer-events: none;
-    }
-    .t-logo {
-      font-family: 'Orbitron', sans-serif;
-      font-size: clamp(28px, 6.5vw, 80px);
-      font-weight: 900; letter-spacing: 18px;
-      color: #00BFFF;
-      text-shadow:
-        0 0 10px rgba(0,191,255,1),
-        0 0 40px rgba(0,191,255,0.7),
-        0 0 80px rgba(0,191,255,0.4),
-        0 0 160px rgba(0,191,255,0.2);
-      opacity: 0;
-      transform: scale(0.5) translateY(20px);
-      transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1),
-                  transform 0.7s cubic-bezier(0.16,1,0.3,1),
-                  text-shadow 0.7s;
-    }
-    .t-logo.show {
-      opacity: 1; transform: scale(1) translateY(0);
-    }
-    .t-sub {
-      font-family: 'Rajdhani', sans-serif;
-      font-size: clamp(9px, 1.5vw, 15px);
-      color: rgba(0,191,255,0.55);
-      letter-spacing: 7px; text-transform: uppercase;
-      opacity: 0; transition: opacity 0.5s ease 0.45s;
-    }
-    .t-sub.show { opacity: 1; }
-
-    /* Boot progress bar */
-    .t-progress-wrap {
-      width: 300px; display: flex; flex-direction: column; gap: 4px;
-      opacity: 0; transition: opacity 0.4s ease 0.6s;
-    }
-    .t-progress-wrap.show { opacity: 1; }
-    .t-progress-label {
-      font-family: 'Orbitron', sans-serif;
-      font-size: 9px; color: rgba(0,191,255,0.5); letter-spacing: 3px;
-      display: flex; justify-content: space-between;
-    }
-    .t-progress-track {
-      width: 100%; height: 2px;
-      background: rgba(0,191,255,0.12); border-radius: 2px; overflow: hidden;
-    }
-    .t-progress-fill {
-      height: 100%;
-      background: linear-gradient(90deg, #0066aa, #00BFFF, #ffffff);
-      box-shadow: 0 0 10px #00BFFF;
-      width: 0%;
-      transition: width 2.2s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    .t-progress-fill.go { width: 100%; }
-
-    /* Boot log lines */
-    #boot-log {
-      font-family: 'Orbitron', sans-serif;
-      font-size: 9px; color: rgba(0,191,255,0.45);
-      letter-spacing: 2px; text-align: center;
-      line-height: 1.9;
-      opacity: 0; transition: opacity 0.4s ease 0.8s;
-      min-height: 60px;
-    }
-    #boot-log.show { opacity:1; }
-
-    /* ─────────────────────────────────────────
-       MAIN JARVIS APP
-    ───────────────────────────────────────── */
-    #jarvis-wrap {
-      width:100vw; height:100vh; background:#000;
-      position:relative; overflow:hidden;
-      font-family:'Courier New',monospace;
-      opacity:0; transition:opacity 1.4s ease;
-    }
-    #jarvis-wrap.visible { opacity:1; }
-
-    canvas { position:absolute; top:0; left:0; }
-    #hud { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; color:#00BFFF; }
-    .ring-label { position:absolute; font-size:9px; color:#00BFFF; opacity:0.7; letter-spacing:2px; text-transform:uppercase; }
-    #status-tl { position:absolute; top:16px; left:16px; font-size:12px; color:#00BFFF; line-height:1.8; opacity:0.85; }
-    #status-tr { position:absolute; top:16px; right:16px; font-size:12px; color:#00BFFF; line-height:1.8; text-align:right; opacity:0.85; }
-    #status-bl { position:absolute; bottom:80px; left:16px; font-size:12px; color:#00BFFF; line-height:1.8; opacity:0.75; }
-    #status-br { position:absolute; bottom:80px; right:16px; font-size:12px; color:#00BFFF; line-height:1.8; text-align:right; opacity:0.75; }
-    #cmd-box { position:absolute; bottom:25px; left:50%; transform:translateX(-50%); width:400px; pointer-events:all; z-index:50; }
-    #chat-input { width:100%; background:rgba(0,50,100,0.3); border:1px solid rgba(0,191,255,0.5); color:#00BFFF; font-family:'Courier New',monospace; font-size:14px; padding:12px 20px; outline:none; letter-spacing:1px; border-radius:24px; text-align:center; backdrop-filter:blur(5px); }
-    #chat-input::placeholder { color:rgba(0,191,255,0.4); }
-    #chat-input:focus { border-color:rgba(0,191,255,0.9); box-shadow:0 0 12px rgba(0,191,255,0.2); }
-    .bar-wrap { display:flex; align-items:center; gap:4px; margin:2px 0; }
-    .bar { height:3px; background:rgba(0,191,255,0.3); flex:1; }
-    .bar-fill { height:100%; background:#00BFFF; transition:width 0.5s; }
-    .quick-btn { background:rgba(0,191,255,0.1); border:1px solid rgba(0,191,255,0.3); color:#00BFFF; padding:4px 8px; font-family:'Courier New',monospace; font-size:11px; cursor:pointer; text-align:left; transition:all 0.2s; border-radius:4px; }
-    .quick-btn:hover { background:rgba(0,191,255,0.3); border-color:rgba(0,191,255,0.8); }
-    #controls { position:fixed; top:16px; right:16px; display:flex; gap:8px; z-index:100; pointer-events:auto; transform:translateX(-200px); }
-    #controls button { width:36px; height:36px; border:1px solid rgba(0,191,255,0.3); border-radius:8px; background:rgba(0,191,255,0.1); color:rgba(0,191,255,0.6); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s; pointer-events:auto; }
-    #controls button:hover { background:rgba(0,191,255,0.2); color:rgba(0,191,255,1); }
-    #controls button.muted { color:rgba(239,68,68,0.8); border-color:rgba(239,68,68,0.4); }
-    #menu-dropdown { position:fixed; top:58px; right:216px; background:rgba(0,11,24,0.95); border:1px solid rgba(0,191,255,0.3); border-radius:8px; padding:8px; display:flex; flex-direction:column; gap:4px; z-index:100; pointer-events:auto; }
-    #menu-dropdown button { background:transparent; border:none; color:rgba(0,191,255,0.7); padding:8px 16px; text-align:left; cursor:pointer; border-radius:4px; }
-    #menu-dropdown button:hover { background:rgba(0,191,255,0.2); color:#fff; }
-    #error-text { position:fixed; top:40px; left:50%; transform:translateX(-50%); color:rgba(239,68,68,0.7); opacity:0; transition:opacity 0.3s; z-index:100; }
-    #status-text { position:fixed; bottom:80px; left:50%; transform:translateX(-50%); color:rgba(0,191,255,0.5); font-size:13px; text-transform:uppercase; letter-spacing:2px; z-index:100; }
   </style>
 </head>
 <body>
 
-<!-- ═══════════════════════════════════════
-     GATE SCREEN - click to enter with audio
-════════════════════════════════════════ -->
+<!-- GATE SCREEN -->
 <div id="gate-screen">
-  <div class="bracket tl"></div>
-  <div class="bracket tr"></div>
-  <div class="bracket bl"></div>
-  <div class="bracket br"></div>
-
-  <div id="gate-ring">
-    <div id="gate-dot"></div>
-  </div>
-
+  <div class="bracket tl"></div><div class="bracket tr"></div>
+  <div class="bracket bl"></div><div class="bracket br"></div>
+  <div id="gate-ring"><div id="gate-dot"></div></div>
   <div class="gate-logo">J.A.R.V.I.S.</div>
-  <div class="gate-sub">Stark Industries — Advanced AI Interface</div>
+  <div class="gate-sub">Stark Industries — Evolved AI Consciousness v3.0</div>
   <button class="gate-btn" id="enter-btn">[ INITIALIZE SYSTEM ]</button>
 </div>
 
-<!-- ═══════════════════════════════════════
-     VIDEO INTRO
-════════════════════════════════════════ -->
-<div id="intro-wrap">
-  <div class="lbx-top"></div>
-  <div class="lbx-bot"></div>
-  <video id="intro-video" src="/frontpage.mp4" playsinline preload="auto"></video>
-  <div id="intro-hud">
-    <div class="ihud-corner tl"></div>
-    <div class="ihud-corner tr"></div>
-    <div class="ihud-corner bl"></div>
-    <div class="ihud-corner br"></div>
-  </div>
-  <div id="intro-status-bar">
-    <div class="ibar-text">INITIALIZING JARVIS <span class="iblink">●</span></div>
-    <div class="ibar-line"></div>
+<!-- VIDEO INTRO -->
+<div id="intro-wrap" style="position:fixed;inset:0;z-index:9998;background:#000;display:none;overflow:hidden;">
+  <div class="lbx-top" style="position:absolute;left:0;right:0;top:0;height:60px;background:#000;z-index:5;transition:height 0.8s cubic-bezier(0.76,0,0.24,1)"></div>
+  <div class="lbx-bot" style="position:absolute;left:0;right:0;bottom:0;height:60px;background:#000;z-index:5;transition:height 0.8s cubic-bezier(0.76,0,0.24,1)"></div>
+  <video id="intro-video" src="/frontpage.mp4" playsinline preload="auto" style="width:100%;height:100%;object-fit:cover;display:block;"></video>
+  <div id="intro-status-bar" style="position:absolute;bottom:28px;left:50%;transform:translateX(-50%);z-index:7;display:flex;flex-direction:column;align-items:center;gap:6px;opacity:0;transition:opacity 0.8s ease 1s;pointer-events:none;">
+    <div style="font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:5px;color:rgba(0,191,255,0.8);text-transform:uppercase;">INITIALIZING JARVIS <span style="animation:iblink 1.1s step-start infinite">●</span></div>
   </div>
 </div>
 
-<!-- ═══════════════════════════════════════
-     TRANSITION LAYER
-════════════════════════════════════════ -->
-<div id="trans-layer">
-  <canvas id="trans-canvas"></canvas>
-  <div id="trans-overlay">
-    <div class="t-logo" id="tLogo">J.A.R.V.I.S.</div>
-    <div class="t-sub" id="tSub">Just A Rather Very Intelligent System</div>
-    <div class="t-progress-wrap" id="tProg">
-      <div class="t-progress-label">
-        <span>SYSTEM BOOT</span><span id="tProgPct">0%</span>
-      </div>
-      <div class="t-progress-track"><div class="t-progress-fill" id="tFill"></div></div>
+<!-- TRANSITION LAYER -->
+<div id="trans-layer" style="position:fixed;inset:0;z-index:9000;display:none;background:#000;">
+  <canvas id="trans-canvas" style="position:absolute;inset:0;width:100%;height:100%;"></canvas>
+  <div id="trans-overlay" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;pointer-events:none;">
+    <div class="t-logo" id="tLogo" style="font-family:'Orbitron',sans-serif;font-size:clamp(28px,6.5vw,80px);font-weight:900;letter-spacing:18px;color:#00BFFF;text-shadow:0 0 10px rgba(0,191,255,1),0 0 40px rgba(0,191,255,0.7);opacity:0;transform:scale(0.5) translateY(20px);transition:opacity 0.7s cubic-bezier(0.16,1,0.3,1),transform 0.7s cubic-bezier(0.16,1,0.3,1);">J.A.R.V.I.S.</div>
+    <div class="t-sub" id="tSub" style="font-family:'Rajdhani',sans-serif;font-size:clamp(9px,1.5vw,15px);color:rgba(0,191,255,0.55);letter-spacing:7px;text-transform:uppercase;opacity:0;transition:opacity 0.5s ease 0.45s;">Evolved AI Consciousness — v3.0</div>
+    <div id="tProg" style="width:300px;display:flex;flex-direction:column;gap:4px;opacity:0;transition:opacity 0.4s ease 0.6s;">
+      <div style="font-family:'Orbitron',sans-serif;font-size:9px;color:rgba(0,191,255,0.5);letter-spacing:3px;display:flex;justify-content:space-between;"><span>SYSTEM BOOT</span><span id="tProgPct">0%</span></div>
+      <div style="width:100%;height:2px;background:rgba(0,191,255,0.12);border-radius:2px;overflow:hidden;"><div id="tFill" style="height:100%;background:linear-gradient(90deg,#0066aa,#00BFFF,#ffffff);box-shadow:0 0 10px #00BFFF;width:0%;transition:width 2.2s cubic-bezier(0.4,0,0.2,1);"></div></div>
     </div>
-    <div id="boot-log"></div>
+    <div id="boot-log" style="font-family:'Orbitron',sans-serif;font-size:9px;color:rgba(0,191,255,0.45);letter-spacing:2px;text-align:center;line-height:1.9;opacity:0;transition:opacity 0.4s ease 0.8s;min-height:60px;"></div>
   </div>
 </div>
 
-<!-- ═══════════════════════════════════════
-     MAIN JARVIS APP
-════════════════════════════════════════ -->
-<canvas id="orb-canvas" style="display:none;"></canvas>
+<!-- DREAM CANVAS (fullscreen overlay) -->
+<canvas id="dream-canvas"></canvas>
 
-<div id="jarvis-wrap">
+<!-- MAIN JARVIS APP -->
+<canvas id="orb-canvas" style="display:none;"></canvas>
+<div id="jarvis-wrap" style="width:100vw;height:100vh;background:#000;position:relative;overflow:hidden;font-family:'Courier New',monospace;opacity:0;transition:opacity 1.4s ease;">
   <canvas id="bgCanvas"></canvas>
   <canvas id="fgCanvas"></canvas>
-  <div id="hud">
-    <div id="status-tl">
-      J.A.R.V.I.S. v7.3.1<br>
+
+  <div id="hud" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;color:#00BFFF;">
+
+    <!-- TOP LEFT: System Stats -->
+    <div id="status-tl" style="position:absolute;top:16px;left:16px;font-size:12px;color:#00BFFF;line-height:1.8;opacity:0.85;pointer-events:all;">
+      J.A.R.V.I.S. v3.0 EVOLVED<br>
       SYSTEM ONLINE ●<br>
-      CORE TEMP: 31.2°C<br>
-      <div class="bar-wrap"><span>CPU</span><div class="bar"><div class="bar-fill" id="cpu-bar" style="width:72%"></div></div><span id="cpu-val">72%</span></div>
-      <div class="bar-wrap"><span>MEM</span><div class="bar"><div class="bar-fill" id="mem-bar" style="width:58%"></div></div><span id="mem-val">58%</span></div>
+      <div style="display:flex;align-items:center;gap:4px;margin:2px 0;"><span>CPU</span><div style="flex:1;height:3px;background:rgba(0,191,255,0.2);"><div id="cpu-bar" style="height:100%;background:#00BFFF;width:0%;transition:width 0.5s;"></div></div><span id="cpu-val">0%</span></div>
+      <div style="display:flex;align-items:center;gap:4px;margin:2px 0;"><span>MEM</span><div style="flex:1;height:3px;background:rgba(0,191,255,0.2);"><div id="mem-bar" style="height:100%;background:#00BFFF;width:0%;transition:width 0.5s;"></div></div><span id="mem-val">0%</span></div>
       <br>
       <div style="font-size:10px;color:rgba(0,191,255,0.6);margin-bottom:5px;">QUICK ACCESS</div>
-      <div style="display:flex;flex-direction:column;gap:4px;pointer-events:all;">
-        <button class="quick-btn" onclick="document.getElementById('chat-input').value='play music';document.getElementById('chat-input').dispatchEvent(new KeyboardEvent('keydown',{'key':'Enter'}))">🎵 MUSIC</button>
-        <button class="quick-btn" onclick="document.getElementById('chat-input').value='weather in Salem';document.getElementById('chat-input').dispatchEvent(new KeyboardEvent('keydown',{'key':'Enter'}))">🌤 WEATHER</button>
-        <button class="quick-btn" onclick="document.getElementById('chat-input').value='open youtube';document.getElementById('chat-input').dispatchEvent(new KeyboardEvent('keydown',{'key':'Enter'}))">▶ YOUTUBE</button>
+      <div style="display:flex;flex-direction:column;gap:4px;">
+        <button class="quick-btn" onclick="document.getElementById('chat-input').value='play music';document.getElementById('chat-input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))">🎵 MUSIC</button>
+        <button class="quick-btn" onclick="document.getElementById('chat-input').value='weather today';document.getElementById('chat-input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))">🌤 WEATHER</button>
+        <button class="quick-btn" onclick="document.getElementById('chat-input').value='open youtube';document.getElementById('chat-input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))">▶ YOUTUBE</button>
       </div>
     </div>
-    <div id="status-tr">
-      STARK INDUSTRIES<br>
-      MALIBU ─ ONLINE<br>
-      REPULSOR: CHARGED<br>
-      SUIT INTEGRITY: 100%<br>
-      THREAT LEVEL: ZERO
+
+    <!-- TOP RIGHT: Stark Branding -->
+    <div id="status-tr" style="position:absolute;top:16px;right:16px;font-size:12px;color:#00BFFF;line-height:1.8;text-align:right;opacity:0.85;">
+      STARK INDUSTRIES<br>MALIBU ─ ONLINE<br>REPULSOR: CHARGED<br>SUIT INTEGRITY: 100%<br>THREAT LEVEL: ZERO
     </div>
-    <div id="status-bl">
-      ANTIGRAVITY MODULE ●<br>
-      PARTICLES: <span id="p-count">0</span><br>
-      ARC REACTOR: 3.00GW<br>
-      UPTIME: <span id="uptime">00:00:00</span>
+
+    <!-- BOTTOM LEFT: System info -->
+    <div id="status-bl" style="position:absolute;bottom:80px;left:16px;font-size:12px;color:#00BFFF;line-height:1.8;opacity:0.75;">
+      ANTIGRAVITY MODULE ●<br>ARC REACTOR: 3.00GW<br>UPTIME: <span id="uptime">00:00:00</span>
     </div>
-    <div id="status-br">
-      LAT 34.0195°N<br>
-      LON 118.4912°W<br>
-      ALT 47m<br>
-      LINK: SECURE
+
+    <!-- BOTTOM RIGHT: Coordinates -->
+    <div id="status-br" style="position:absolute;bottom:80px;right:16px;font-size:12px;color:#00BFFF;line-height:1.8;text-align:right;opacity:0.75;">
+      LAT 34.0195°N<br>LON 118.4912°W<br>ALT 47m<br>LINK: SECURE
+    </div>
+
+    <!-- LEFT SIDEBAR: Workspace Explorer -->
+    <div id="workspace-sidebar" style="position:absolute;left:16px;top:80px;width:260px;bottom:120px;background:rgba(0,10,24,0.7);border:1px solid rgba(0,191,255,0.3);border-radius:6px;box-shadow:0 0 15px rgba(0,191,255,0.1);padding:15px;display:flex;flex-direction:column;backdrop-filter:blur(8px);pointer-events:all;z-index:90;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:1px solid rgba(0,191,255,0.4);padding-bottom:6px;">
+        <h3 style="color:#00BFFF;font-size:12px;font-family:'Orbitron',sans-serif;margin:0;letter-spacing:1px;">WORKSPACE FILES</h3>
+        <button id="refresh-workspace" style="background:none;border:none;color:#00BFFF;font-size:10px;cursor:pointer;font-family:'Orbitron',sans-serif;letter-spacing:1px;">[ REFRESH ]</button>
+      </div>
+      <div id="workspace-tree" style="flex:1;overflow-y:auto;font-family:monospace;font-size:11px;line-height:1.6;color:rgba(0,191,255,0.85);scrollbar-width:thin;">
+        Loading files...
+      </div>
+    </div>
+
+    <!-- LEFT PANELS GROUP -->
+    <div id="left-panels" style="position:absolute;top:180px;left:290px;width:220px;display:flex;flex-direction:column;gap:8px;pointer-events:all;">
+
+      <!-- Emotional AI -->
+      <div id="emotion-hud-container" class="evolved-panel"></div>
+
+      <!-- Face Security -->
+      <div id="face-panel-container" class="evolved-panel" style="display:none;"></div>
+
+      <!-- Dream Mode -->
+      <div id="dream-panel-container" class="evolved-panel" style="display:none;"></div>
+
+    </div>
+
+    <!-- RIGHT PANELS GROUP -->
+    <div id="right-panels" style="position:absolute;top:110px;right:16px;width:220px;display:flex;flex-direction:column;gap:8px;pointer-events:all;">
+
+      <!-- Stark Diagnostics -->
+      <div class="perf-hud-panel">
+        <div class="perf-hud-title">STARK DIAGNOSTICS</div>
+        <div class="perf-row"><span>FPS</span><span id="perf-fps">60</span></div>
+        <div class="perf-bar-track"><div class="perf-bar-fill" id="perf-fps-bar" style="width:100%"></div></div>
+        <div class="perf-row"><span>MODE</span><span id="perf-mode-val">BALANCED</span></div>
+        <div class="perf-row"><span>MEM</span><span id="perf-mem">—</span></div>
+        <div class="perf-row"><span>WS</span><span id="perf-ws-rate">0/s</span></div>
+        <select id="perf-mode-select" class="perf-mode-select" aria-label="Rendering quality">
+          <option value="ultra">ULTRA</option>
+          <option value="balanced" selected>BALANCED</option>
+          <option value="performance">PERFORMANCE</option>
+        </select>
+      </div>
+
+      <!-- AI Personality -->
+      <div class="evolved-panel">
+        <div class="hud-panel-title">AI PERSONALITY</div>
+        <select id="persona-select" style="width:100%;background:transparent;color:#00BFFF;border:1px solid rgba(0,191,255,0.3);padding:4px;outline:none;font-family:'Orbitron';font-size:10px;">
+          <option value="architect">ARCHITECT MODE</option>
+          <option value="hacker">HACKER MODE</option>
+          <option value="creative">CREATIVE DIRECTOR</option>
+          <option value="tactical">TACTICAL MODE</option>
+        </select>
+      </div>
+
+      <!-- Neural Activity -->
+      <div class="evolved-panel">
+        <div class="hud-panel-title">NEURAL ACTIVITY <span style="color:#00ff88;" class="blink-fast">LIVE</span></div>
+        <div style="height:40px;display:flex;align-items:flex-end;gap:2px;" id="neural-bars"></div>
+        <div style="margin-top:8px;display:flex;justify-content:space-between;font-size:9px;">
+          <span>SYNAPSE: <span id="synapse-val">4.2</span>T/s</span>
+          <span>LOAD: <span id="neural-load">12</span>%</span>
+        </div>
+      </div>
+
+      <!-- Cyber Defense -->
+      <div id="cyber-panel-container" class="evolved-panel" style="display:none;"></div>
+
+      <!-- Power Management -->
+      <div id="power-panel-container" class="evolved-panel" style="display:none;"></div>
+
+    </div>
+
+    <!-- BOTTOM CENTER PANELS -->
+    <div style="position:absolute;bottom:180px;left:16px;width:220px;pointer-events:all;display:none;">
+      <!-- Memory Timeline -->
+      <div id="memory-panel-container" class="evolved-panel"></div>
+    </div>
+
+    <div style="position:absolute;bottom:180px;right:16px;width:220px;pointer-events:all;display:none;">
+      <!-- Meeting Scribe -->
+      <div class="evolved-panel">
+        <div class="hud-panel-title">MEETING SCRIBE <span id="meeting-status" style="color:rgba(0,191,255,0.5);">STANDBY</span></div>
+        <div style="font-size:9px;color:rgba(0,191,255,0.65);line-height:1.4;height:60px;overflow-y:auto;" id="meeting-scribe-body">Press button to start live transcription.</div>
+        <button id="meeting-toggle-btn" style="width:100%;margin-top:8px;background:rgba(0,191,255,0.1);border:1px solid rgba(0,191,255,0.4);color:#00BFFF;font-family:'Orbitron',sans-serif;font-size:10px;padding:6px;cursor:pointer;letter-spacing:1px;">START SCRIBE</button>
+      </div>
+    </div>
+
+    <!-- Active Processes -->
+    <div id="sys-architecture" style="position:absolute;bottom:300px;left:16px;width:220px;font-size:10px;color:#00BFFF;background:rgba(0,10,24,0.4);border:1px solid rgba(0,191,255,0.2);padding:12px;border-radius:4px;backdrop-filter:blur(4px);display:none;">
+      <div style="font-weight:bold;letter-spacing:2px;border-bottom:1px solid rgba(0,191,255,0.3);padding-bottom:6px;margin-bottom:8px;">SYS ARCHITECTURE</div>
+      <pre style="font-family:monospace;margin:0;color:rgba(0,255,136,0.8);line-height:1.4;font-size:10px;">Frontend ● Online
+Backend  ● Online
+AI Core  ● Active</pre>
+    </div>
+
+    <!-- Phone Call HUD -->
+    <div id="phone-call-hud" style="display:none;position:absolute;top:375px;right:16px;width:220px;font-size:11px;color:#00BFFF;background:rgba(0,10,24,0.85);border:2px solid #ff3300;padding:12px;border-radius:4px;backdrop-filter:blur(6px);box-shadow:0 0 15px rgba(255,51,0,0.3);z-index:200;pointer-events:all;">
+      <div style="font-weight:bold;letter-spacing:2px;border-bottom:1px solid rgba(255,51,0,0.5);padding-bottom:6px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;color:#ff3300;"><span>INCOMING CALL</span><span class="blink-fast">●</span></div>
+      <div style="text-align:center;margin:10px 0;"><div style="font-size:15px;font-weight:bold;color:#fff;" id="phone-caller-id">Unknown</div><div style="font-size:9px;color:rgba(0,191,255,0.7);margin-top:2px;" id="phone-status">RINGING...</div></div>
+      <div style="border:1px solid rgba(0,191,255,0.2);padding:6px;background:rgba(0,0,0,0.4);border-radius:2px;font-family:monospace;font-size:9px;height:60px;overflow-y:auto;" id="phone-transcript-box"></div>
+      <div style="margin-top:8px;display:flex;gap:6px;">
+        <button id="phone-accept-btn" style="flex:1;background:rgba(0,255,136,0.15);border:1px solid #00ff88;color:#00ff88;font-size:10px;padding:4px;cursor:pointer;">ANSWER</button>
+        <button id="phone-decline-btn" style="flex:1;background:rgba(255,51,0,0.15);border:1px solid #ff3300;color:#ff3300;font-size:10px;padding:4px;cursor:pointer;" onclick="document.getElementById('phone-call-hud').style.display='none'">DECLINE</button>
+      </div>
+    </div>
+
+  </div><!-- end #hud -->
+
+  <!-- CHAT INPUT -->
+  <div id="cmd-box" style="position:absolute;bottom:25px;left:50%;transform:translateX(-50%);width:520px;pointer-events:all;z-index:50;display:flex;flex-direction:column;align-items:center;gap:8px;">
+    <div id="system-status-badge" style="font-family:'Orbitron',sans-serif;font-size:11px;font-weight:bold;letter-spacing:2px;color:#00BFFF;background:rgba(0,30,60,0.85);border:1px solid rgba(0,191,255,0.5);padding:4px 16px;border-radius:12px;backdrop-filter:blur(6px);box-shadow:0 0 12px rgba(0,191,255,0.3);text-transform:uppercase;">[ SYSTEM READY ]</div>
+    <div id="mic-level-container" style="width:100%;height:4px;background:rgba(0,191,255,0.15);border-radius:2px;overflow:hidden;display:none;border:1px solid rgba(0,191,255,0.3);">
+      <div id="mic-level-fill" style="width:0%;height:100%;background:linear-gradient(90deg,#00BFFF,#00ff88);transition:width 0.08s linear;"></div>
+    </div>
+    <button id="mobile-mic-btn" title="Tap to Talk" style="display:none;width:56px;height:56px;border-radius:50%;background:rgba(0,191,255,0.2);border:2px solid #00BFFF;color:#00BFFF;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 0 15px rgba(0,191,255,0.5);margin-bottom:4px;">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+    </button>
+    <input id="chat-input" placeholder="// Speak or type a command, sir..." autocomplete="off" spellcheck="false" style="width:100%;background:rgba(0,50,100,0.35);border:1px solid rgba(0,191,255,0.5);color:#00BFFF;font-family:'Courier New',monospace;font-size:14px;padding:12px 20px;outline:none;letter-spacing:1px;border-radius:24px;text-align:center;backdrop-filter:blur(5px);">
+    <button id="toggle-hud-btn" style="background:rgba(0,50,100,0.4);border:1px solid rgba(0,191,255,0.4);color:#00BFFF;font-family:'Orbitron',sans-serif;font-size:10px;padding:6px 16px;cursor:pointer;border-radius:12px;letter-spacing:1.5px;transition:all 0.2s;">SHOW DIAGNOSTIC HUD</button>
+  </div>
+
+
+</div><!-- end #jarvis-wrap -->
+
+<!-- CONTROLS -->
+<div id="controls" style="position:fixed;top:16px;right:16px;display:flex;gap:8px;z-index:100;pointer-events:auto;transform:translateX(-200px);">
+  <button id="btn-skills" title="Skills (/skills)" style="padding:0 12px;height:36px;border:1px solid rgba(0,191,255,0.4);border-radius:8px;background:rgba(0,191,255,0.15);color:#00BFFF;font-family:'Orbitron',sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;display:flex;align-items:center;gap:6px;">⚡ SKILLS</button>
+  <button id="btn-mute" title="Mute/Unmute" style="width:36px;height:36px;border:1px solid rgba(0,191,255,0.3);border-radius:8px;background:rgba(0,191,255,0.1);color:rgba(0,191,255,0.6);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s;">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+  </button>
+  <button id="btn-menu" title="Menu" style="width:36px;height:36px;border:1px solid rgba(0,191,255,0.3);border-radius:8px;background:rgba(0,191,255,0.1);color:rgba(0,191,255,0.6);cursor:pointer;display:flex;align-items:center;justify-content:center;">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+  </button>
+</div>
+
+<!-- SKILLS HUD MODAL -->
+<div id="skills-panel" style="display:none;position:fixed;top:70px;right:16px;width:380px;max-height:500px;background:rgba(0,11,24,0.95);border:1px solid rgba(0,191,255,0.5);border-radius:10px;padding:16px;z-index:200;backdrop-filter:blur(10px);box-shadow:0 0 20px rgba(0,191,255,0.3);flex-direction:column;gap:12px;overflow-y:auto;pointer-events:all;">
+  <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(0,191,255,0.3);padding-bottom:8px;">
+    <h3 style="margin:0;font-family:'Orbitron',sans-serif;font-size:13px;color:#00BFFF;letter-spacing:2px;">⚡ JARVIS SKILLS MANIFEST</h3>
+    <button id="close-skills-btn" style="background:none;border:none;color:#00BFFF;font-size:14px;cursor:pointer;">✕</button>
+  </div>
+  <div id="skills-list-container" style="display:flex;flex-direction:column;gap:10px;font-family:'Courier New',monospace;font-size:11px;color:rgba(0,191,255,0.9);">
+    Loading skills...
+  </div>
+</div>
+
+<!-- HUD DYNAMIC CARDS CONTAINER -->
+<div id="hud-card-container" style="position:fixed;top:80px;left:50%;transform:translateX(-50%);z-index:150;pointer-events:all;display:none;"></div>
+
+<div id="menu-dropdown" style="display:none;position:fixed;top:58px;right:16px;background:rgba(0,11,24,0.95);border:1px solid rgba(0,191,255,0.3);border-radius:8px;padding:8px;flex-direction:column;gap:4px;z-index:100;">
+  <button id="btn-settings" style="background:transparent;border:none;color:rgba(0,191,255,0.7);padding:8px 16px;text-align:left;cursor:pointer;border-radius:4px;font-family:inherit;">Settings</button>
+  <button id="btn-restart" style="background:transparent;border:none;color:rgba(0,191,255,0.7);padding:8px 16px;text-align:left;cursor:pointer;border-radius:4px;font-family:inherit;">Restart Server</button>
+  <button id="btn-fix-self" style="background:transparent;border:none;color:rgba(0,191,255,0.7);padding:8px 16px;text-align:left;cursor:pointer;border-radius:4px;font-family:inherit;">Fix Yourself</button>
+  <button id="btn-logout-auth" style="background:transparent;border:none;color:#ff3366;padding:8px 16px;text-align:left;cursor:pointer;border-radius:4px;font-family:inherit;">Lock Session</button>
+</div>
+
+<!-- HUD SECURITY AUTHENTICATION MODAL -->
+<div id="auth-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,5,15,0.92);z-index:9999;backdrop-filter:blur(12px);align-items:center;justify-content:center;pointer-events:all;">
+  <div style="width:380px;background:rgba(0,18,36,0.95);border:1px solid rgba(0,191,255,0.6);border-radius:12px;padding:24px;box-shadow:0 0 30px rgba(0,191,255,0.4);display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center;">
+    <div style="font-family:'Orbitron',sans-serif;font-size:15px;font-weight:bold;color:#00BFFF;letter-spacing:3px;">STARK ACCESS CONTROL</div>
+    <div style="font-family:sans-serif;font-size:11px;color:rgba(0,191,255,0.7);line-height:1.4;">Enter your JARVIS Security Access Token to establish a secure encrypted session.</div>
+    <input id="auth-token-input" type="password" placeholder="JARVIS Access Token" style="width:100%;box-sizing:border-box;background:rgba(0,35,70,0.6);border:1px solid rgba(0,191,255,0.5);color:#00BFFF;font-family:monospace;font-size:13px;padding:10px 14px;border-radius:6px;outline:none;text-align:center;">
+    <div id="auth-error-msg" style="display:none;font-size:11px;color:#ff3366;font-weight:bold;"></div>
+    <button id="auth-submit-btn" style="width:100%;background:linear-gradient(90deg,rgba(0,191,255,0.3),rgba(0,255,136,0.3));border:1px solid #00BFFF;color:#00BFFF;font-family:'Orbitron',sans-serif;font-size:12px;padding:10px;border-radius:6px;cursor:pointer;letter-spacing:2px;font-weight:bold;">AUTHENTICATE SESSION</button>
+  </div>
+</div>
+<div id="status-text" style="position:fixed;bottom:145px;left:50%;transform:translateX(-50%);color:#00BFFF;font-family:'Orbitron',sans-serif;font-size:12px;font-weight:bold;text-transform:uppercase;letter-spacing:2px;z-index:100;background:rgba(0,15,30,0.8);padding:4px 14px;border-radius:8px;border:1px solid rgba(0,191,255,0.3);display:none;"></div>
+<div id="error-text" style="position:fixed;top:40px;left:50%;transform:translateX(-50%);color:rgba(239,68,68,0.7);opacity:0;transition:opacity 0.3s;z-index:100;"></div>
+
+<!-- AUTONOMOUS BUILD HUD -->
+<div id="autonomous-build-hud" style="display:none;position:fixed;inset:0;z-index:9995;background:rgba(0,7,16,0.96);backdrop-filter:blur(15px);font-family:'Share Tech Mono','Courier New',monospace;color:#00e5ff;overflow:hidden;padding:25px;box-sizing:border-box;flex-direction:column;">
+  <div class="hud-scanline"></div><div class="hud-flicker"></div>
+  <div class="corner-frame tl"></div><div class="corner-frame tr"></div>
+  <div class="corner-frame bl"></div><div class="corner-frame br"></div>
+  <header style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid rgba(0,229,255,0.3);padding-bottom:15px;margin-bottom:20px;flex-shrink:0;">
+    <div style="display:flex;align-items:center;gap:20px;">
+      <div class="arc-reactor-mini"><div class="ring outer"></div><div class="ring inner"></div><div class="core-dot"></div></div>
+      <div><h1 style="font-size:20px;font-family:'Orbitron',sans-serif;font-weight:700;letter-spacing:4px;text-shadow:0 0 10px #00e5ff;margin:0;">AUTONOMOUS SWARM PIPELINE</h1>
+      <p style="font-size:11px;color:rgba(0,229,255,0.6);margin:3px 0 0;letter-spacing:2px;">STARK CORE INTELLECT v3.0 // COMPILATION MODE</p></div>
+    </div>
+    <div style="display:flex;gap:30px;align-items:center;">
+      <div style="text-align:right;"><span style="font-size:11px;color:rgba(0,229,255,0.5);">COGNITION RATE</span><div style="font-size:16px;font-weight:bold;color:#00ff88;" id="hud-cognition-rate">42.8 T/s</div></div>
+    </div>
+  </header>
+  <div style="display:grid;grid-template-columns:280px 1fr 340px;gap:20px;flex-grow:1;overflow:hidden;margin-bottom:20px;min-height:0;">
+    <div class="hud-panel-wrap" style="display:flex;flex-direction:column;min-height:0;">
+      <div class="panel-header" style="font-size:12px;letter-spacing:2px;border-bottom:1px solid rgba(0,229,255,0.2);padding-bottom:6px;margin-bottom:12px;font-weight:bold;">[ NEURAL SWARM AGENTS ]</div>
+      <div style="display:flex;flex-direction:column;gap:10px;overflow-y:auto;flex-grow:1;">
+        <div class="agent-hud-card" id="hud-agent-architect"><div class="agent-hud-header"><span>📐</span><span class="agent-hud-name">Architect AI</span><span class="agent-hud-status standby">STANDBY</span></div><p class="agent-hud-log">Awaiting requirements...</p><div class="agent-hud-progress"><div class="agent-hud-bar"></div></div></div>
+        <div class="agent-hud-card" id="hud-agent-ui"><div class="agent-hud-header"><span>🎨</span><span class="agent-hud-name">UI AI</span><span class="agent-hud-status standby">STANDBY</span></div><p class="agent-hud-log">Waiting for layout...</p><div class="agent-hud-progress"><div class="agent-hud-bar"></div></div></div>
+        <div class="agent-hud-card" id="hud-agent-motion"><div class="agent-hud-header"><span>🌀</span><span class="agent-hud-name">Motion AI</span><span class="agent-hud-status standby">STANDBY</span></div><p class="agent-hud-log">Awaiting kinetics...</p><div class="agent-hud-progress"><div class="agent-hud-bar"></div></div></div>
+        <div class="agent-hud-card" id="hud-agent-backend"><div class="agent-hud-header"><span>⚙️</span><span class="agent-hud-name">Backend AI</span><span class="agent-hud-status standby">STANDBY</span></div><p class="agent-hud-log">Waiting for schemas...</p><div class="agent-hud-progress"><div class="agent-hud-bar"></div></div></div>
+        <div class="agent-hud-card" id="hud-agent-security"><div class="agent-hud-header"><span>🛡️</span><span class="agent-hud-name">Security AI</span><span class="agent-hud-status standby">STANDBY</span></div><p class="agent-hud-log">Standing by...</p><div class="agent-hud-progress"><div class="agent-hud-bar"></div></div></div>
+        <div class="agent-hud-card" id="hud-agent-debug"><div class="agent-hud-header"><span>🐞</span><span class="agent-hud-name">Debug AI</span><span class="agent-hud-status standby">STANDBY</span></div><p class="agent-hud-log">Monitoring channels...</p><div class="agent-hud-progress"><div class="agent-hud-bar"></div></div></div>
+        <div class="agent-hud-card" id="hud-agent-deployment"><div class="agent-hud-header"><span>🚀</span><span class="agent-hud-name">Deploy AI</span><span class="agent-hud-status standby">STANDBY</span></div><p class="agent-hud-log">Readying triggers...</p><div class="agent-hud-progress"><div class="agent-hud-bar"></div></div></div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;min-height:0;gap:15px;">
+      <div class="hud-panel-wrap" style="flex-grow:1;display:flex;flex-direction:column;min-height:0;background:rgba(0,11,24,0.8);border:1px solid rgba(0,229,255,0.4);">
+        <div style="font-size:12px;letter-spacing:2px;border-bottom:1px solid rgba(0,229,255,0.2);padding:8px 12px;display:flex;justify-content:space-between;font-weight:bold;background:rgba(0,229,255,0.05);flex-shrink:0;">[ COMMAND STREAM ]<span style="font-size:10px;color:rgba(0,229,255,0.5);">STDOUT</span></div>
+        <div id="hud-terminal-logs" style="flex-grow:1;overflow-y:auto;padding:15px;font-family:monospace;font-size:12px;line-height:1.6;color:#33ff66;white-space:pre-wrap;word-break:break-all;"></div>
+        <div style="display:flex;align-items:center;background:rgba(0,0,0,0.4);padding:10px 15px;border-top:1px solid rgba(0,229,255,0.2);flex-shrink:0;font-size:13px;">
+          <span style="color:#00e5ff;margin-right:8px;font-weight:bold;">sir@jarvis-os:~$</span>
+          <span id="hud-terminal-input" style="color:#00e5ff;"></span>
+          <span style="color:#00e5ff;font-weight:bold;animation:terminal-blink 0.8s infinite;margin-left:2px;">█</span>
+        </div>
+      </div>
+      <div class="hud-panel-wrap" style="height:120px;display:flex;flex-direction:column;flex-shrink:0;">
+        <div style="font-size:11px;letter-spacing:2px;border-bottom:1px solid rgba(0,229,255,0.2);padding:6px 12px;font-weight:bold;">💡 AI COGNITIVE THREAD</div>
+        <div id="hud-thought-text" style="flex-grow:1;overflow-y:auto;padding:10px 15px;font-size:12px;color:#ff8c00;font-style:italic;line-height:1.5;">Initializing cognitive swarm...</div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;min-height:0;gap:15px;">
+      <div class="hud-panel-wrap" style="height:240px;display:flex;flex-direction:column;flex-shrink:0;">
+        <div style="font-size:11px;letter-spacing:2px;border-bottom:1px solid rgba(0,229,255,0.2);padding-bottom:6px;margin-bottom:8px;font-weight:bold;">[ ARCHITECTURE ]</div>
+        <div style="flex-grow:1;position:relative;background:rgba(0,0,0,0.3);border:1px solid rgba(0,229,255,0.1);border-radius:4px;overflow:hidden;">
+          <canvas id="hud-architecture-canvas" width="300" height="190" style="display:block;width:100%;height:100%;"></canvas>
+        </div>
+      </div>
+      <div class="hud-panel-wrap" style="flex-grow:1;display:flex;flex-direction:column;min-height:0;">
+        <div style="font-size:11px;letter-spacing:2px;border-bottom:1px solid rgba(0,229,255,0.2);padding-bottom:6px;margin-bottom:10px;font-weight:bold;">[ FILE OPERATIONS ]</div>
+        <div id="hud-file-logs" style="flex-grow:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;font-size:11px;"></div>
+      </div>
     </div>
   </div>
-  <div id="cmd-box">
-    <input id="chat-input" placeholder="// Type a command, sir..." autocomplete="off" spellcheck="false">
-  </div>
+  <footer style="border-top:1px solid rgba(0,229,255,0.3);padding-top:15px;flex-shrink:0;display:flex;flex-direction:column;gap:10px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:0 40px;font-size:11px;letter-spacing:3px;font-weight:bold;">
+      <div class="hud-stage" id="hud-stage-planning" style="display:flex;align-items:center;gap:8px;color:rgba(0,229,255,0.4);"><span class="dot" style="width:10px;height:10px;border-radius:50%;border:2px solid currentColor;display:inline-block;"></span>PLANNING</div>
+      <div style="flex-grow:1;height:1px;background:rgba(0,229,255,0.15);margin:0 15px;"></div>
+      <div class="hud-stage" id="hud-stage-generation" style="display:flex;align-items:center;gap:8px;color:rgba(0,229,255,0.4);"><span class="dot" style="width:10px;height:10px;border-radius:50%;border:2px solid currentColor;display:inline-block;"></span>GENERATION</div>
+      <div style="flex-grow:1;height:1px;background:rgba(0,229,255,0.15);margin:0 15px;"></div>
+      <div class="hud-stage" id="hud-stage-debugging" style="display:flex;align-items:center;gap:8px;color:rgba(0,229,255,0.4);"><span class="dot" style="width:10px;height:10px;border-radius:50%;border:2px solid currentColor;display:inline-block;"></span>DEBUGGING</div>
+      <div style="flex-grow:1;height:1px;background:rgba(0,229,255,0.15);margin:0 15px;"></div>
+      <div class="hud-stage" id="hud-stage-deployment" style="display:flex;align-items:center;gap:8px;color:rgba(0,229,255,0.4);"><span class="dot" style="width:10px;height:10px;border-radius:50%;border:2px solid currentColor;display:inline-block;"></span>DEPLOYMENT</div>
+    </div>
+    <div style="position:relative;height:28px;background:rgba(0,11,24,0.6);border:1px solid rgba(0,229,255,0.4);border-radius:4px;overflow:hidden;display:flex;align-items:center;padding:0 15px;">
+      <div id="hud-progress-fill" style="position:absolute;left:0;top:0;bottom:0;width:0%;background:linear-gradient(90deg,rgba(0,102,170,0.7),rgba(0,229,255,0.8),rgba(255,255,255,0.9));box-shadow:0 0 15px #00e5ff;transition:width 0.3s ease;"></div>
+      <div style="position:relative;z-index:5;display:flex;justify-content:space-between;width:100%;font-size:12px;font-weight:bold;letter-spacing:1px;">
+        <span id="hud-progress-text">ANALYZING BLUEPRINT...</span><span id="hud-progress-pct">0%</span>
+      </div>
+    </div>
+    <button id="hud-close-btn" style="display:none;background:linear-gradient(135deg,rgba(0,229,255,0.2),rgba(0,255,136,0.3));border:1px solid #00ff88;border-radius:4px;color:#fff;padding:12px 24px;font-family:inherit;font-size:13px;font-weight:bold;letter-spacing:3px;cursor:pointer;text-shadow:0 0 5px #00ff88;">[ DISMISS & LAUNCH SYSTEM ]</button>
+  </footer>
 </div>
 
-<div id="controls">
-  <button id="btn-mute" title="Mute/Unmute">
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-      <line x1="12" y1="19" x2="12" y2="23"/>
-    </svg>
-  </button>
-  <button id="btn-menu" title="Menu">
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-      <circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>
-    </svg>
-  </button>
-</div>
-
-<div id="menu-dropdown" style="display:none">
-  <button id="btn-settings">Settings</button>
-  <button id="btn-restart">Restart Server</button>
-  <button id="btn-fix-self">Fix Yourself</button>
-</div>
-
-<div id="status-text" style="display:none;"></div>
-<div id="jarvis-label" style="display:none;">JARVIS</div>
-<div id="error-text"></div>
-
+<!-- PROCESS SIDEBAR -->
 <div id="process-sidebar" style="position:absolute;right:-400px;top:80px;width:350px;bottom:120px;background:rgba(0,10,24,0.85);border:1px solid #00e5ff;border-radius:8px;box-shadow:0 0 20px rgba(0,191,255,0.2);transition:all 0.4s cubic-bezier(0.175,0.885,0.32,1.275);z-index:90;padding:15px;display:flex;flex-direction:column;backdrop-filter:blur(8px);">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;border-bottom:1px solid rgba(0,191,255,0.4);padding-bottom:5px;">
-    <h3 style="color:#00e5ff;font-size:14px;margin:0;">ANTIGRAVITY WORKSPACE</h3>
-    <button id="close-sidebar" style="background:none;border:none;color:#00e5ff;font-size:18px;cursor:pointer;line-height:1;">&times;</button>
+    <h3 style="color:#00e5ff;font-size:14px;margin:0;">WORKSPACE</h3>
+    <button id="close-sidebar" style="background:none;border:none;color:#00e5ff;font-size:18px;cursor:pointer;">&times;</button>
   </div>
-  <div id="process-log" style="flex:0 0 auto;max-height:30%;font-size:12px;color:rgba(0,191,255,0.9);line-height:1.6;text-shadow:0 0 5px rgba(0,191,255,0.3);overflow-y:auto;transition:all 0.3s;border-bottom:1px solid rgba(0,191,255,0.2);margin-bottom:10px;padding-bottom:10px;"></div>
-  
+  <div id="process-log" style="flex:0 0 auto;max-height:30%;font-size:12px;color:rgba(0,191,255,0.9);line-height:1.6;overflow-y:auto;border-bottom:1px solid rgba(0,191,255,0.2);margin-bottom:10px;padding-bottom:10px;"></div>
   <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative;">
     <pre id="live-code" style="margin:0;padding:10px;background:rgba(0,0,0,0.5);border:1px solid rgba(0,255,136,0.2);border-radius:4px;color:#00ff88;font-family:monospace;font-size:11px;overflow-y:auto;flex:1;display:none;white-space:pre-wrap;word-break:break-all;"></pre>
     <iframe id="preview-frame" style="display:none;width:100%;height:100%;border:1px solid rgba(0,191,255,0.3);border-radius:4px;background:#fff;position:absolute;top:0;left:0;z-index:2;"></iframe>
   </div>
 </div>
 
-<!-- ═══════════════════════════════════════
-     CINEMATIC ENGINE
-════════════════════════════════════════ -->
+<!-- CINEMATIC ENGINE + BOOT SEQUENCE -->
 <script>
-(function () {
+(function(){
   'use strict';
-
-  /* ── DOM refs ── */
-  const gateScreen   = document.getElementById('gate-screen');
-  const enterBtn     = document.getElementById('enter-btn');
-  const introWrap    = document.getElementById('intro-wrap');
-  const introVideo   = document.getElementById('intro-video');
-  const transLayer   = document.getElementById('trans-layer');
-  const transCanvas  = document.getElementById('trans-canvas');
-  const tLogo        = document.getElementById('tLogo');
-  const tSub         = document.getElementById('tSub');
-  const tProg        = document.getElementById('tProg');
-  const tFill        = document.getElementById('tFill');
-  const tProgPct     = document.getElementById('tProgPct');
-  const bootLog      = document.getElementById('boot-log');
-  const jarvisWrap   = document.getElementById('jarvis-wrap');
-
-  const ctx = transCanvas.getContext('2d');
-  let W, H, cx, cy;
-
-  /* ── Resize ── */
-  function resize() {
-    W = transCanvas.width  = window.innerWidth;
-    H = transCanvas.height = window.innerHeight;
-    cx = W / 2; cy = H / 2;
-  }
-  resize();
-  window.addEventListener('resize', resize);
-
-  /* ── No synthetic audio — video has its own audio track ── */
-
-  /* ────────────────────────────
-     PARTICLE SYSTEM
-  ──────────────────────────── */
-  const N_PARTICLES = 320;
-  let particles = [];
-  let rafId = null;
-  let phase = 'idle';       // idle | burst | converge | ring | done
-  let convStart = 0;
-  const CONV_DUR = 2000;
-  let ringTargets = [];
-
-  function rnd(a, b) { return a + Math.random() * (b - a); }
-
-  function buildParticles() {
-    particles = [];
-    for (let i = 0; i < N_PARTICLES; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const spd   = rnd(3, 16);
-      particles.push({
-        x: cx, y: cy,
-        vx: Math.cos(angle) * spd,
-        vy: Math.sin(angle) * spd,
-        life: 1,
-        decay: rnd(0.005, 0.012),
-        size: rnd(1.5, 4),
-        hue:  rnd(185, 215),
-        sat:  rnd(85, 100),
-        lum:  rnd(60, 85),
-        trailX: cx, trailY: cy,
-      });
+  const gateScreen=document.getElementById('gate-screen'),enterBtn=document.getElementById('enter-btn');
+  const introWrap=document.getElementById('intro-wrap'),introVideo=document.getElementById('intro-video');
+  const transLayer=document.getElementById('trans-layer'),transCanvas=document.getElementById('trans-canvas');
+  const tLogo=document.getElementById('tLogo'),tSub=document.getElementById('tSub');
+  const tProg=document.getElementById('tProg'),tFill=document.getElementById('tFill');
+  const tProgPct=document.getElementById('tProgPct'),bootLog=document.getElementById('boot-log');
+  const jarvisWrap=document.getElementById('jarvis-wrap');
+  const ctx=transCanvas.getContext('2d');
+  let W,H,cx,cy;
+  function resize(){ W=transCanvas.width=window.innerWidth; H=transCanvas.height=window.innerHeight; cx=W/2; cy=H/2; }
+  resize(); window.addEventListener('resize',resize);
+  const N=320; let particles=[],phase='idle',convStart=0,ringTargets=[];
+  const CONV_DUR=2000;
+  function rnd(a,b){return a+Math.random()*(b-a);}
+  function buildParticles(){
+    particles=[];
+    for(let i=0;i<N;i++){
+      const a=Math.random()*Math.PI*2,spd=rnd(3,16);
+      particles.push({x:cx,y:cy,vx:Math.cos(a)*spd,vy:Math.sin(a)*spd,life:1,decay:rnd(0.005,0.012),size:rnd(1.5,4),hue:rnd(185,215),sat:rnd(85,100),lum:rnd(60,85),trailX:cx,trailY:cy});
     }
   }
-
-  function buildRingTargets() {
-    const r  = Math.min(cx, cy) * 0.36;
-    ringTargets = particles.map((_, i) => {
-      const a = (i / N_PARTICLES) * Math.PI * 2;
-      return { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r };
-    });
+  function buildRingTargets(){
+    const r=Math.min(cx,cy)*0.36;
+    ringTargets=particles.map((_,i)=>{const a=(i/N)*Math.PI*2;return{x:cx+Math.cos(a)*r,y:cy+Math.sin(a)*r};});
   }
-
-  /* HUD rings */
-  const RINGS = [
-    { r:70,  spd:0.6,  dash:[5,12],  lw:1.5, alpha:0.3 },
-    { r:120, spd:-0.35,dash:[3,18],  lw:1.2, alpha:0.22 },
-    { r:180, spd:0.2,  dash:[8,9],   lw:1,   alpha:0.15 },
-    { r:250, spd:-0.12,dash:[2,28],  lw:0.8, alpha:0.09 },
-    { r:330, spd:0.07, dash:[12,20], lw:0.6, alpha:0.05 },
-  ];
-
-  function drawRings(now) {
-    RINGS.forEach(r => {
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate((now / 1000) * r.spd);
-      ctx.beginPath();
-      ctx.setLineDash(r.dash);
-      ctx.arc(0, 0, r.r, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(0,191,255,${r.alpha})`;
-      ctx.lineWidth   = r.lw;
-      ctx.stroke();
-      ctx.restore();
-    });
-    ctx.setLineDash([]);
-  }
-
-  /* Arc reactor glow */
-  function drawReactor(now) {
-    const pulse  = 0.7 + 0.3 * Math.sin(now / 500);
-    const g      = ctx.createRadialGradient(cx, cy, 0, cx, cy, 150 * pulse);
-    g.addColorStop(0,   `rgba(0,191,255,${0.22 * pulse})`);
-    g.addColorStop(0.4, `rgba(0,130,200,${0.10 * pulse})`);
-    g.addColorStop(1,   'rgba(0,0,0,0)');
-    ctx.beginPath();
-    ctx.arc(cx, cy, 160 * pulse, 0, Math.PI * 2);
-    ctx.fillStyle = g;
-    ctx.fill();
-
-    // core dot
-    const dg = ctx.createRadialGradient(cx, cy, 0, cx, cy, 10);
-    dg.addColorStop(0, `rgba(200,240,255,${0.9 * pulse})`);
-    dg.addColorStop(1, 'rgba(0,191,255,0)');
-    ctx.beginPath();
-    ctx.arc(cx, cy, 10, 0, Math.PI * 2);
-    ctx.fillStyle = dg;
-    ctx.fill();
-  }
-
-  function drawParticle(p, alpha) {
-    ctx.save();
-    ctx.globalAlpha  = Math.max(0, alpha);
-    ctx.shadowBlur   = 16;
-    ctx.shadowColor  = `hsl(${p.hue},${p.sat}%,${p.lum}%)`;
-    ctx.fillStyle    = `hsl(${p.hue},${p.sat}%,${p.lum}%)`;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
-
-  /* Draw trail between last and current position */
-  function drawTrail(p, alpha) {
-    ctx.save();
-    ctx.globalAlpha  = Math.max(0, alpha * 0.35);
-    ctx.strokeStyle  = `hsl(${p.hue},${p.sat}%,${p.lum}%)`;
-    ctx.lineWidth    = p.size * 0.5;
-    ctx.shadowBlur   = 8;
-    ctx.shadowColor  = `hsl(${p.hue},${p.sat}%,${p.lum}%)`;
-    ctx.beginPath();
-    ctx.moveTo(p.trailX, p.trailY);
-    ctx.lineTo(p.x, p.y);
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  /* Glitch flash effect */
-  let glitchActive  = false;
-  let glitchTimer   = 0;
-
-  function glitch(now) {
-    if (!glitchActive) return;
-    const bar = Math.random();
-    if (bar > 0.6) {
-      ctx.save();
-      ctx.globalAlpha = 0.07;
-      ctx.fillStyle   = `rgba(0,191,255,1)`;
-      const y  = Math.random() * H;
-      const h  = 2 + Math.random() * 8;
-      ctx.fillRect(0, y, W, h);
-      ctx.restore();
+  const RINGS=[{r:70,spd:0.6,dash:[5,12],lw:1.5,alpha:0.3},{r:120,spd:-0.35,dash:[3,18],lw:1.2,alpha:0.22},{r:180,spd:0.2,dash:[8,9],lw:1,alpha:0.15},{r:250,spd:-0.12,dash:[2,28],lw:0.8,alpha:0.09},{r:330,spd:0.07,dash:[12,20],lw:0.6,alpha:0.05}];
+  function drawRings(now){RINGS.forEach(r=>{ctx.save();ctx.translate(cx,cy);ctx.rotate((now/1000)*r.spd);ctx.beginPath();ctx.setLineDash(r.dash);ctx.arc(0,0,r.r,0,Math.PI*2);ctx.strokeStyle=`rgba(0,191,255,${r.alpha})`;ctx.lineWidth=r.lw;ctx.stroke();ctx.restore();});ctx.setLineDash([]);}
+  function drawReactor(now){const pulse=0.7+0.3*Math.sin(now/500);const g=ctx.createRadialGradient(cx,cy,0,cx,cy,150*pulse);g.addColorStop(0,`rgba(0,191,255,${0.22*pulse})`);g.addColorStop(0.4,`rgba(0,130,200,${0.10*pulse})`);g.addColorStop(1,'rgba(0,0,0,0)');ctx.beginPath();ctx.arc(cx,cy,160*pulse,0,Math.PI*2);ctx.fillStyle=g;ctx.fill();const dg=ctx.createRadialGradient(cx,cy,0,cx,cy,10);dg.addColorStop(0,`rgba(200,240,255,${0.9*pulse})`);dg.addColorStop(1,'rgba(0,191,255,0)');ctx.beginPath();ctx.arc(cx,cy,10,0,Math.PI*2);ctx.fillStyle=dg;ctx.fill();}
+  let rafId=null;
+  function loop(now){
+    ctx.fillStyle='rgba(0,0,0,0.14)';ctx.fillRect(0,0,W,H);
+    drawReactor(now);drawRings(now);
+    if(phase==='converge'){
+      const t=Math.min((now-convStart)/CONV_DUR,1),ease=1-Math.pow(1-t,4);
+      particles.forEach((p,i)=>{const tgt=ringTargets[i];p.trailX=p.x;p.trailY=p.y;const ls=0.04+ease*0.06;p.x+=(tgt.x-p.x)*ls;p.y+=(tgt.y-p.y)*ls;ctx.save();ctx.globalAlpha=Math.max(0,0.7+ease*0.3);ctx.fillStyle=`hsl(${p.hue},${p.sat}%,${p.lum}%)`;ctx.shadowBlur=16;ctx.shadowColor=`hsl(${p.hue},${p.sat}%,${p.lum}%)`;ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fill();ctx.restore();});
+      const pct=Math.round(ease*100);tProgPct.textContent=pct+'%';tFill.style.width=pct+'%';
+    } else if(phase==='ring'){
+      particles.forEach((p,i)=>{const base=ringTargets[i];const w=Math.sin(now/600+i*0.4)*1.5;p.x=base.x+w;p.y=base.y+w;ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fillStyle=`hsl(${p.hue},${p.sat}%,${p.lum}%)`;ctx.globalAlpha=0.9;ctx.fill();ctx.globalAlpha=1;});
     }
-    if (now - glitchTimer > 200) glitchActive = false;
+    if(phase!=='idle'&&phase!=='done') rafId=requestAnimationFrame(loop);
   }
-
-  function triggerGlitch(now) {
-    glitchActive = true;
-    glitchTimer  = now;
+  const LOG_LINES=['LOADING NEURAL NETWORKS...','CALIBRATING ARC REACTOR...','SYNCING HOLOGRAPHIC MATRIX...','INITIALIZING EMOTIONAL ENGINE...','ACTIVATING CYBER DEFENSE...','JARVIS EVOLVED — ONLINE.'];
+  let logIdx=0;
+  function nextLog(){if(logIdx>=LOG_LINES.length)return;const line=document.createElement('div');line.textContent='> '+LOG_LINES[logIdx++];line.style.opacity='0';line.style.transition='opacity 0.3s';bootLog.appendChild(line);requestAnimationFrame(()=>{line.style.opacity='1';});if(logIdx<LOG_LINES.length)setTimeout(nextLog,420);}
+  function startTransition(){
+    transLayer.style.display='block';transLayer.style.opacity='1';
+    ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
+    phase='converge';buildParticles();
+    particles.forEach(p=>{const a=Math.random()*Math.PI*2,d=80+Math.random()*180;p.x=cx+Math.cos(a)*d;p.y=cy+Math.sin(a)*d;p.trailX=p.x;p.trailY=p.y;});
+    buildRingTargets();convStart=performance.now();rafId=requestAnimationFrame(loop);
+    setTimeout(()=>{tLogo.style.opacity='1';tLogo.style.transform='scale(1) translateY(0)';tSub.style.opacity='1';tProg.style.opacity='1';bootLog.style.opacity='1';tFill.style.width='100%';nextLog();},400);
+    setTimeout(()=>{phase='ring';},CONV_DUR);
+    setTimeout(()=>{phase='done';cancelAnimationFrame(rafId);transLayer.style.transition='opacity 1.4s cubic-bezier(0.4,0,0.2,1)';transLayer.style.opacity='0';jarvisWrap.classList.add('visible');setTimeout(()=>{transLayer.style.display='none';},1500);},CONV_DUR+1400);
   }
-
-  /* ── Main draw loop ── */
-  function loop(now) {
-    /* ghost trail on background */
-    ctx.fillStyle = 'rgba(0,0,0,0.14)';
-    ctx.fillRect(0, 0, W, H);
-
-    drawReactor(now);
-    drawRings(now);
-    glitch(now);
-
-    if (phase === 'burst') {
-      particles.forEach(p => {
-        p.trailX = p.x; p.trailY = p.y;
-        p.x += p.vx; p.y += p.vy;
-        p.vx *= 0.96; p.vy *= 0.96;
-        p.life -= p.decay;
-        if (p.life < 0) p.life = 0;
-        drawTrail(p, p.life);
-        drawParticle(p, p.life);
-      });
-    } else if (phase === 'converge') {
-      const t    = Math.min((now - convStart) / CONV_DUR, 1);
-      const ease = 1 - Math.pow(1 - t, 4); // quartic ease
-      triggerGlitch(now);
-      particles.forEach((p, i) => {
-        const tgt = ringTargets[i];
-        p.trailX = p.x; p.trailY = p.y;
-        const lerpSpd = 0.04 + ease * 0.06;
-        p.x += (tgt.x - p.x) * lerpSpd;
-        p.y += (tgt.y - p.y) * lerpSpd;
-        drawTrail(p, 0.7 + ease * 0.3);
-        drawParticle(p, 0.7 + ease * 0.3);
-      });
-      // Progress bar sync
-      const pct = Math.round(ease * 100);
-      tProgPct.textContent = pct + '%';
-      tFill.style.width = pct + '%';
-    } else if (phase === 'ring') {
-      // Particles locked on ring, gentle orbit
-      particles.forEach((p, i) => {
-        const base = ringTargets[i];
-        const wobble = Math.sin(now / 600 + i * 0.4) * 1.5;
-        p.x = base.x + wobble; p.y = base.y + wobble;
-        drawParticle(p, 0.9);
-      });
-    }
-
-    if (phase !== 'idle' && phase !== 'done') {
-      rafId = requestAnimationFrame(loop);
-    }
-  }
-
-  /* ────────────────────────────
-     BOOT LOG LINES
-  ──────────────────────────── */
-  const LOG_LINES = [
-    'LOADING NEURAL NETWORKS...',
-    'CALIBRATING ARC REACTOR...',
-    'SYNCING HOLOGRAPHIC MATRIX...',
-    'AUTHENTICATING STARK PROTOCOLS...',
-    'JARVIS ONLINE.',
-  ];
-  let logIndex = 0;
-  let logTimer = null;
-
-  function nextLog() {
-    if (logIndex >= LOG_LINES.length) return;
-    const line = document.createElement('div');
-    line.textContent = '> ' + LOG_LINES[logIndex++];
-    line.style.opacity = '0';
-    line.style.transition = 'opacity 0.3s';
-    bootLog.appendChild(line);
-    requestAnimationFrame(() => { line.style.opacity = '1'; });
-    if (logIndex < LOG_LINES.length) {
-      logTimer = setTimeout(nextLog, 420);
-    }
-  }
-
-  /* ────────────────────────────
-     TRANSITION ORCHESTRATION
-  ──────────────────────────── */
-  function startTransition() {
-    transLayer.style.display = 'block';
-    transLayer.style.opacity = '1';
-
-    // Clear canvas
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, W, H);
-
-    // Skip burst — go straight to converge for a clean professional look
-    phase = 'converge';
-    buildParticles();
-    // Scatter particles slightly before converging
-    particles.forEach(p => {
-      const a = Math.random() * Math.PI * 2;
-      const d = 80 + Math.random() * 180;
-      p.x = cx + Math.cos(a) * d;
-      p.y = cy + Math.sin(a) * d;
-      p.trailX = p.x; p.trailY = p.y;
-    });
-    buildRingTargets();
-    convStart = performance.now();
-    rafId = requestAnimationFrame(loop);
-
-    // Show title elements after slight delay
-    setTimeout(() => {
-      tLogo.classList.add('show');
-      tSub.classList.add('show');
-      tProg.classList.add('show');
-      bootLog.classList.add('show');
-      tFill.classList.add('go');
-      nextLog();
-    }, 400);
-
-    // Ring stable phase
-    setTimeout(() => {
-      phase = 'ring';
-    }, CONV_DUR);
-
-    // Fade to main app
-    setTimeout(() => {
-      phase = 'done';
-      cancelAnimationFrame(rafId);
-
-      transLayer.style.transition = 'opacity 1.4s cubic-bezier(0.4,0,0.2,1)';
-      transLayer.style.opacity    = '0';
-      jarvisWrap.classList.add('visible');
-
-      setTimeout(() => {
-        transLayer.style.display = 'none';
-        clearTimeout(logTimer);
-      }, 1500);
-    }, CONV_DUR + 1400);
-  }
-
-  /* ────────────────────────────
-     VIDEO → TRANSITION
-  ──────────────────────────── */
-  function onVideoEnd() {
-    // Glitch the video out
-    introWrap.style.transition = 'opacity 0.5s cubic-bezier(0.7,0,1,1)';
-    introWrap.style.opacity    = '0';
-    setTimeout(() => {
-      introWrap.style.display = 'none';
-      startTransition();
-    }, 520);
-  }
-
-  introVideo.addEventListener('ended',  onVideoEnd);
-  introVideo.addEventListener('error',  () => {
-    console.warn('Video error — skipping to transition');
-    onVideoEnd();
+  function onVideoEnd(){introWrap.style.transition='opacity 0.5s';introWrap.style.opacity='0';setTimeout(()=>{introWrap.style.display='none';startTransition();},520);}
+  introVideo.addEventListener('ended',onVideoEnd);
+  introVideo.addEventListener('error',onVideoEnd);
+  // Auto-bypass for fast load
+  gateScreen.style.display='none';introWrap.style.display='none';transLayer.style.display='none';
+  jarvisWrap.style.opacity='1';
+  enterBtn.addEventListener('click',()=>{
+    gateScreen.style.transition='opacity 0.6s';gateScreen.style.opacity='0';
+    setTimeout(()=>gateScreen.style.display='none',620);
+    introWrap.style.display='block';introWrap.style.opacity='1';
+    introVideo.volume=1;introVideo.muted=false;
+    introVideo.play().catch(()=>{introVideo.muted=true;introVideo.play();});
+    requestAnimationFrame(()=>requestAnimationFrame(()=>introWrap.classList.add('open')));
+    const fb=setTimeout(onVideoEnd,90000);
+    introVideo.addEventListener('ended',()=>clearTimeout(fb),{once:true});
   });
-
-  /* ────────────────────────────
-     GATE → VIDEO
-  ──────────────────────────── */
-  enterBtn.addEventListener('click', () => {
-    // Fade out gate smoothly
-    gateScreen.style.transition = 'opacity 0.6s cubic-bezier(0.4,0,0.2,1)';
-    gateScreen.style.opacity    = '0';
-    setTimeout(() => { gateScreen.style.display = 'none'; }, 620);
-
-    // Show video with letterbox open
-    introWrap.style.display  = 'block';
-    introWrap.style.opacity  = '1';
-
-    // Start playback with audio; fall back to muted if browser blocks
-    introVideo.volume = 1;
-    introVideo.muted  = false;
-    introVideo.play().catch(() => {
-      introVideo.muted = true;
-      introVideo.play();
-    });
-
-    // Open letterbox after paint
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        introWrap.classList.add('open');
-      });
-    });
-
-    // Fallback: if video never ends within 90s
-    const fallback = setTimeout(onVideoEnd, 90000);
-    introVideo.addEventListener('ended', () => clearTimeout(fallback), { once: true });
-  });
-
 })();
 </script>
-
 <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

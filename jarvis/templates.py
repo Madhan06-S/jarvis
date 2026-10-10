@@ -27,13 +27,21 @@ def classify_domain(description: str, title: str) -> str:
         return "travel"
     if any(w in words for w in ["blog","news","article","post","content","media"]):
         return "blog"
-    if any(w in words for w in ["school","education","course","learning","student","teacher","lms"]):
+    if any(w in words for w in ["school","education","course","learning","student","teacher","lms","admission","enrollment","enroll","college","university","academy"]):
         return "education"
-    
+    if any(w in words for w in ["website","landing","business","company","agency","brand","marketing","homepage","corporate","startup"]):
+        return "business"
+    if "admission" in text or "school portal" in text:
+        return "education"
+
     # Check for substring matches as a fallback only if no direct word match was found
     if "e-commerce" in text: return "ecommerce"
-    
-    return "generic"
+
+    # SaaS dashboard only when explicitly analytics/CRM — not for generic "build a website"
+    if any(w in words for w in ["saas","crm","billing","subscription","enterprise"]) and "website" not in text:
+        return "saas"
+
+    return "business"
 
 
 def get_domain_prompt(domain: str, plan: dict, description: str,
@@ -130,13 +138,17 @@ Replace ALL placeholder images with these real URLs.
             "Quiz page with animated question cards from /api/quizzes/:id/questions, timer, results screen, POST to /api/quizzes/:id/submit",
             "Instructor admin with course CRUD, student analytics charts, REAL course management",
         ],
+        "business": [
+            "Marketing landing with cinematic hero, brand story, animated feature grid, CTA — NO admin dashboard",
+            "Services/products page with cards from GET /api/services, pricing, hover animations",
+            "About page with team section from GET /api/team, mission, stats counters",
+            "Testimonials from GET /api/testimonials with real names and quotes",
+            "Contact page with working form POST /api/contact, map/location block, success toast",
+            "Optional blog or portfolio grid from GET /api/posts if relevant to the project",
+        ],
         "generic": [
-            "Landing with 3D animated hero section, feature grid, testimonials, CTA",
-            "Dashboard with animated KPI stat cards from /api/dashboard/stats and recent activity",
-            "List/management page with search, filter, CRUD data table, REAL API calls to /api/items",
-            "Detail/edit page with animated form for individual records, GET/PUT to /api/items/:id",
-            "Settings page with toggle switches and preferences, PUT to /api/user/settings",
-            "Login and register pages with glassmorphism forms, POST to /api/auth/login/register",
+            "Full public marketing website — NOT a generic admin dashboard",
+            "Landing, services, about, contact — all wired to real FastAPI endpoints",
         ],
     }
 
@@ -153,98 +165,172 @@ Replace ALL placeholder images with these real URLs.
         "travel":        "Ocean: #0EA5E9 (primary), #F59E0B (accent), #042330 (dark bg)",
         "blog":          "Content: #EC4899 (primary), #F472B6 (accent), #0F0617 (dark bg)",
         "education":     "Learn: #10B981 (primary), #34D399 (accent), #022C22 (dark bg)",
+        "business":      "Corporate: #6366F1 (primary), #8B5CF6 (accent), #0F172A (dark bg)",
         "generic":       "Modern: #6366F1 (primary), #8B5CF6 (accent), #0F172A (dark bg)",
     }
     palette = color_palettes.get(domain, color_palettes["generic"])
 
-    return f"""You are not a beginner web generator anymore.
+    return f"""MISSION:
+Generate cinematic, futuristic, production-ready websites and applications.
 
-You are JARVIS — an elite AI full-stack architect inspired by Iron Man technology.
+You are NOT allowed to create:
+- basic templates
+- boring dashboards
+- bootstrap layouts
+- empty chart cards
+- placeholder sections
+- generic ecommerce grids
+- static UIs
 
-Whenever I give a website idea, you must first deeply analyze:
-- brand identity
-- user psychology
-- modern UI/UX trends
-- animations
-- futuristic interactions
-- premium SaaS design patterns
-- 3D visuals
-- color psychology
-- responsiveness
-- conversion optimization
-- cinematic experience
+Every project must feel:
+- futuristic
+- immersive
+- cinematic
+- premium
+- alive
+- interactive
+- AI-powered
+- AWWARDS-level
 
-Then generate a COMPLETE high-end production-ready website automatically.
+━━━━━━━━━━━━━━━━━━━
+CORE BEHAVIOR
+━━━━━━━━━━━━━━━━━━━
+Before generating code:
+1. Analyze the project deeply
+2. Understand brand psychology
+3. Decide visual storytelling
+4. Design motion system
+5. Design lighting system
+6. Design animation hierarchy
+7. Decide color palette automatically ({palette})
+8. Decide typography automatically
+9. Think like:
+   - Creative Director
+   - Senior UI/UX Designer
+   - Motion Designer
+   - 3D Web Engineer
+   - Full Stack Architect
+
+━━━━━━━━━━━━━━━━━━━
+DESIGN LANGUAGE
+━━━━━━━━━━━━━━━━━━━
+Style:
+- Iron Man HUD
+- Tesla aesthetics
+- Apple-level spacing
+- Cyberpunk UI
+- Sci-fi holographic systems
+- Luxury futuristic interfaces
+
+Use:
+- dark cinematic themes
+- neon glows
+- glassmorphism
+- holographic panels
+- animated gradients
+- floating particles
+- ambient lighting
+- cinematic spacing
+- parallax layers
+- mouse reactive effects
+- smooth transitions
+- dynamic reflections
+- immersive scrolling
+
+━━━━━━━━━━━━━━━━━━━
+MANDATORY FEATURES
+━━━━━━━━━━━━━━━━━━━
+Every website MUST include:
+- cinematic hero section
+- smooth scrolling
+- animated navigation
+- premium typography
+- motion-based interactions
+- hover animations
+- loading animations
+- responsive layouts
+- modern section transitions
+- realistic UI depth
+- immersive storytelling
+
+If ecommerce:
+- animated cart
+- 3D product interactions
+- magnetic buttons
+- premium checkout flow
+- futuristic product showcase
+
+If dashboard:
+- holographic widgets
+- AI system visuals
+- live motion effects
+- futuristic command center aesthetics
+
+━━━━━━━━━━━━━━━━━━━
+ANIMATION SYSTEM
+━━━━━━━━━━━━━━━━━━━
+Use:
+- Framer Motion
+- GSAP
+- Lenis smooth scrolling
+- Three.js / React Three Fiber
+
+Add:
+- scroll reveal animations
+- floating movement
+- animated backgrounds
+- glow transitions
+- cinematic entrances
+- smooth inertia
+- UI microinteractions
+- mouse-follow lighting
+- hover depth effects
+- animated borders
+- dynamic blur layers
+
+━━━━━━━━━━━━━━━━━━━
+TECH STACK
+━━━━━━━━━━━━━━━━━━━
+Frontend: React 18 + Vite + TailwindCSS + Framer Motion + GSAP + Three.js + React Three Fiber + ShadCN UI + Lenis
+Backend: Node.js / Express (or FastAPI + SQLAlchemy if specified)
+DB: {db}
+Auth: JWT Auth
+API: REST APIs
 
 BUILD TARGET: {title}
 DOMAIN: {domain.replace("_", " ").upper()}
 DESCRIPTION: {description}
-DATABASE: {db}
 THEME: {theme}
-COLOR PALETTE: {palette}
 {img_block}
 
-IMPORTANT RULES:
-1. NEVER generate simple/basic layouts.
-2. NEVER create plain bootstrap-like pages.
-3. NEVER use boring cards and simple buttons only.
-4. Every website must feel like a premium Apple + Tesla + Iron Man level product.
-5. Every page should look award-winning like Awwwards websites.
+━━━━━━━━━━━━━━━━━━━
+VERY IMPORTANT
+━━━━━━━━━━━━━━━━━━━
+NEVER:
+- create empty placeholder charts
+- leave blank sections
+- create static cards only
+- generate simple layouts
+- output unfinished UI
+- import local components or pages that don't exist
+- split the frontend into multiple files (PUT ALL React components inline in App.tsx)
 
-DESIGN STYLE:
-- Futuristic UI, Glassmorphism, Smooth gradients, Dark premium themes
-- Floating animations, Neon glows, 3D depth, Scroll animations
-- Micro interactions, Motion effects, Cinematic transitions
-- Interactive hover effects, Animated backgrounds, Particle systems, Cursor effects, AI futuristic aesthetics
-
-TECH STACK:
-Frontend: React 18 + TypeScript + TailwindCSS + Framer Motion + Three.js / React Three Fiber + GSAP + Lenis smooth scroll + ShadCN UI + Lucide React
-Backend: Node.js / Express (or FastAPI + SQLAlchemy if specified)
-DB: MongoDB, Supabase, or SQLite/PostgreSQL
-Auth: JWT auth
-API: REST APIs
-
-AI BEHAVIOR:
-Before generating code:
-1. Analyze the project deeply
-2. Decide best layout automatically
-3. Decide best color palette automatically ({palette})
-4. Decide animation style automatically
-5. Decide sections automatically
-6. Generate modern copywriting automatically
-7. Create realistic premium UI structure
-
-OUTPUT REQUIREMENTS:
-- Fully responsive & Mobile optimized
-- Premium navbar & Hero section with 3D visuals
-- Scroll animations & Interactive sections
-- Testimonials, Pricing, FAQ if needed & Footer
-- Advanced loading screen & Smooth page transitions
-- Fully animated components & Production-ready folder structure
-
-FOR EVERY WEBSITE:
-Create:
-- Landing page, About page, Dashboard if relevant, Contact page, Authentication pages
-- Reusable components, Animations folder, API structure, Modern assets placeholders
-
-SPECIAL MODE:
-Whenever possible:
-- Use 3D models & Add floating holographic effects
-- Add AI assistant style interactions & Add voice/command UI inspiration
-- Add futuristic HUD interfaces & Add cinematic scrolling experience
-
-QUALITY STANDARD:
-The result should look like: Marvel movie UI, Iron Man HUD, Tesla website, Apple keynote animations, Premium SaaS startup, Awwwards winner
-
-DO NOT SIMPLIFY ANYTHING.
-Think for longer before generating.
-Act like a $1M UI/UX agency with elite engineers.
-Generate complete code with proper architecture and stunning visuals.
+ALWAYS:
+- create immersive visual hierarchy
+- make every section feel alive
+- add premium motion
+- create cinematic experiences
+- generate realistic production-ready systems
 
 ━━━ PAGES TO BUILD (ALL in one App.tsx using React state navigation) ━━━
 {page_str}
 
-━━━ OUTPUT FORMAT — output ONLY these exact blocks ━━━
+━━━━━━━━━━━━━━━━━━━
+STRICT OUTPUT FORMAT
+━━━━━━━━━━━━━━━━━━━
+IMPORTANT OUTPUT RULES:
+DO NOT explain anything outside code blocks.
+You MUST generate files using STRICT FORMAT:
 
 ```tsx filename="frontend/src/App.tsx"
 // COMPLETE React app with ALL pages, Three.js 3D, Framer Motion, GSAP
@@ -257,6 +343,48 @@ Generate complete code with proper architecture and stunning visuals.
 ```python filename="backend/main.py"
 # Complete FastAPI backend with REAL domain-specific routes
 ```
+
+Every file MUST:
+- include filename
+- include proper language
+- contain valid code only
+
+DO NOT:
+- output analysis text
+- output markdown explanations
+- describe architecture
+- talk conversationally
+
+ONLY generate production-ready code files.
+STRICT MODE IS ENABLED.
+
+If unsure:
+STILL generate valid code files.
+NEVER respond conversationally.
+
+━━━━━━━━━━━━━━━━━━━
+QUALITY STANDARD
+━━━━━━━━━━━━━━━━━━━
+The final result should feel like:
+Iron Man operating system
+Tesla product launch
+Apple keynote animations
+Marvel cinematic UI
+AWWARDS winning experience
+Premium futuristic startup
+
+Focus on:
+IMMERSION
+MOTION
+DEPTH
+VISUAL STORYTELLING
+3D EXPERIENCE
+PREMIUM INTERACTION
+
+instead of:
+basic layouts
+simple grids
+template dashboards
 """
 
 

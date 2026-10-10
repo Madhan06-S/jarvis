@@ -3,17 +3,20 @@ import re
 import json
 import uuid
 import time
+import secrets
 import asyncio
 import base64
 import platform
 import subprocess
 import urllib.parse
+from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 
 import httpx
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -22,11 +25,17 @@ import uvicorn
 # ─────────────────────────────────────────────
 def load_env():
     if os.path.exists(".env"):
-        with open(".env", "r") as f:
+        with open(".env", "r", encoding="utf-8", errors="ignore") as f:
             for line in f:
-                if "=" in line and not line.startswith("#"):
-                    k, v = line.strip().split("=", 1)
-                    os.environ[k] = v
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    k = k.strip()
+                    v = v.strip().strip('"').strip("'")
+                    if k and v:
+                        os.environ[k] = v
 
 load_env()
 
@@ -38,6 +47,52 @@ import notes_access
 import actions
 import work_mode
 import planner
+import intent_router
+import ai_brain
+import stt_engine
+
+# ── New Evolution Modules ──────────────────────────────────────────────────────
+try:
+    import emotional_engine
+    EMOTIONAL_ENGINE_AVAILABLE = True
+except ImportError:
+    EMOTIONAL_ENGINE_AVAILABLE = False
+
+try:
+    import face_security
+    FACE_SECURITY_AVAILABLE = True
+except ImportError:
+    FACE_SECURITY_AVAILABLE = False
+
+try:
+    import gesture_control
+    GESTURE_AVAILABLE = True
+except ImportError:
+    GESTURE_AVAILABLE = False
+
+try:
+    import dream_mode
+    DREAM_MODE_AVAILABLE = True
+except ImportError:
+    DREAM_MODE_AVAILABLE = False
+
+try:
+    import cyber_defense
+    CYBER_DEFENSE_AVAILABLE = True
+except ImportError:
+    CYBER_DEFENSE_AVAILABLE = False
+
+try:
+    import power_manager
+    POWER_MANAGER_AVAILABLE = True
+except ImportError:
+    POWER_MANAGER_AVAILABLE = False
+
+try:
+    import memory_timeline
+    TIMELINE_AVAILABLE = True
+except ImportError:
+    TIMELINE_AVAILABLE = False
 
 
 
@@ -54,6 +109,14 @@ USER_NAME               = os.getenv("USER_NAME", "sir")
 DEFAULT_PORT            = 8340
 ANTHROPIC_API_KEY       = os.getenv("ANTHROPIC_API_KEY", "")
 CLAUDE_MODEL            = "claude-sonnet-4-20250514"   # Smartest available model
+GEMINI_API_KEY          = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL            = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
+# Clear placeholders from keys
+if ANTHROPIC_API_KEY and ("your-" in ANTHROPIC_API_KEY.lower() or ANTHROPIC_API_KEY.startswith("your-")):
+    ANTHROPIC_API_KEY = ""
+if GEMINI_API_KEY and ("your-" in GEMINI_API_KEY.lower() or GEMINI_API_KEY.startswith("your-")):
+    GEMINI_API_KEY = ""
 
 # Update PATH for launchd / macOS / Homebrew compatibility
 os.environ["PATH"] += (
@@ -62,12 +125,114 @@ os.environ["PATH"] += (
     os.pathsep + "/usr/local/bin"
 )
 
+JARVIS_AUTH_TOKEN = os.getenv("JARVIS_AUTH_TOKEN", "").strip()
+if not JARVIS_AUTH_TOKEN or JARVIS_AUTH_TOKEN == "jarvis-stark-secure-2026":
+    import secrets
+    JARVIS_AUTH_TOKEN = secrets.token_urlsafe(32)
+    env_path = Path(".env")
+    if env_path.exists():
+        try:
+            content = env_path.read_text(encoding="utf-8")
+            if "JARVIS_AUTH_TOKEN=" in content:
+                content = re.sub(r"JARVIS_AUTH_TOKEN=.*", f"JARVIS_AUTH_TOKEN={JARVIS_AUTH_TOKEN}", content)
+            else:
+                content += f"\nJARVIS_AUTH_TOKEN={JARVIS_AUTH_TOKEN}\n"
+            env_path.write_text(content, encoding="utf-8")
+        except Exception as _e:
+            pass
+
+# Rate limiting for auth attempts (IP -> list of timestamps)
+_failed_auth_attempts: Dict[str, List[float]] = {}
+
+def _is_rate_limited(ip: str) -> bool:
+    now = time.time()
+    attempts = [t for t in _failed_auth_attempts.get(ip, []) if now - t < 60]
+    _failed_auth_attempts[ip] = attempts
+    return len(attempts) >= 5
+
+def _record_failed_auth(ip: str):
+    now = time.time()
+    _failed_auth_attempts.setdefault(ip, []).append(now)
+
+def verify_ws_auth(websocket: WebSocket) -> bool:
+    client_ip = websocket.client.host if websocket.client else "127.0.0.1"
+
+    # Extract token from subprotocols, headers, or query string
+    subprotocols = websocket.headers.get("sec-websocket-protocol", "").split(",")
+    provided_token = ""
+    for sub in subprotocols:
+        sub = sub.strip()
+        if sub.startswith("bearer.") or sub.startswith("bearer="):
+            provided_token = sub[7:]
+        elif sub and sub != "bearer":
+            provided_token = sub
+
+    if not provided_token:
+        auth_h = websocket.headers.get("authorization", "")
+        if auth_h.startswith("Bearer "):
+            provided_token = auth_h[7:].strip()
+        else:
+            provided_token = websocket.headers.get("x-jarvis-token", "")
+
+    if not provided_token:
+        provided_token = websocket.query_params.get("token", "")
+
+    if provided_token and secrets.compare_digest(provided_token, JARVIS_AUTH_TOKEN):
+        return True
+
+    if _is_rate_limited(client_ip):
+        return False
+
+    _record_failed_auth(client_ip)
+    return False
+
 IS_MAC     = platform.system() == "Darwin"
 IS_WINDOWS = platform.system() == "Windows"
 IS_LINUX   = platform.system() == "Linux"
 
 # Active Timers store  {id: asyncio.Task}
 _active_timers: Dict[str, asyncio.Task] = {}
+_active_websockets = set()
+_companion_websockets = set()
+
+
+# ─────────────────────────────────────────────
+# Real-Time System Monitoring Daemon
+# ─────────────────────────────────────────────
+async def system_monitor_daemon():
+    import psutil
+    while True:
+        try:
+            if _active_websockets:
+                cpu = psutil.cpu_percent(interval=None)
+                ram = psutil.virtual_memory().percent
+                disk = psutil.disk_usage('/').percent
+                
+                # Fetch top 5 active applications by CPU load
+                processes = []
+                for p in sorted(psutil.process_iter(['name', 'cpu_percent']), key=lambda x: x.info['cpu_percent'] or 0, reverse=True)[:5]:
+                    processes.append({
+                        "name": p.info['name'],
+                        "cpu": f"{p.info['cpu_percent']:.1f}%"
+                    })
+                
+                stats_msg = {
+                    "type": "system_stats",
+                    "cpu": cpu,
+                    "ram": ram,
+                    "disk": disk,
+                    "processes": processes,
+                    "temp": round(32.5 + (cpu * 0.15), 1) # Stark diagnostic temp sim
+                }
+                
+                for ws in list(_active_websockets):
+                    try:
+                        await ws.send_json(stats_msg)
+                    except:
+                        pass
+        except Exception as e:
+            print("System Monitor Daemon Error:", e)
+        await asyncio.sleep(2.0)
 
 # ─────────────────────────────────────────────
 # Lifespan
@@ -75,16 +240,110 @@ _active_timers: Dict[str, asyncio.Task] = {}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     asyncio.create_task(refresh_context_daemon())
+    asyncio.create_task(system_monitor_daemon())
+
+    try:
+        import proactive_scheduler
+        proactive_scheduler.init_proactive_scheduler()
+    except Exception as sched_err:
+        print(f"[Proactive Scheduler Error] {sched_err}")
+
+    # ── Start Evolution Systems ────────────────────────────────────────────────
+
+    if DREAM_MODE_AVAILABLE:
+        dm = dream_mode.get_dream()
+        dm.start_monitor()
+        async def _dream_broadcast(data):
+            for ws in list(_active_websockets):
+                try: await ws.send_json({**data, "type": data.get("type", "dream_event")})
+                except: pass
+        dm.on_dream(lambda d: asyncio.create_task(_dream_broadcast(d)))
+
+    if CYBER_DEFENSE_AVAILABLE:
+        cd = cyber_defense.get_defense()
+        cd.start()
+        async def _threat_broadcast(threat):
+            for ws in list(_active_websockets):
+                try: await ws.send_json({"type": "cyber_threat", **threat})
+                except: pass
+        cd.on_threat(lambda t: asyncio.create_task(_threat_broadcast(t)))
+
+    if POWER_MANAGER_AVAILABLE:
+        pm = power_manager.get_manager()
+        pm.start()
+        async def _power_broadcast(event):
+            for ws in list(_active_websockets):
+                try: await ws.send_json({"type": "power_event", **event})
+                except: pass
+        pm.on_event(lambda e: asyncio.create_task(_power_broadcast(e)))
+
+    if FACE_SECURITY_AVAILABLE:
+        fs = face_security.get_system()
+        async def _face_broadcast(event):
+            for ws in list(_active_websockets):
+                try:
+                    payload = {k: v for k, v in event.items() if k != "frame"}
+                    await ws.send_json({"type": "face_event", **payload})
+                except: pass
+        fs.on_event(lambda e: asyncio.create_task(_face_broadcast(e)))
+
+    if GESTURE_AVAILABLE:
+        gc = gesture_control.get_controller()
+        async def _gesture_broadcast(gesture):
+            for ws in list(_active_websockets):
+                try: await ws.send_json({"type": "gesture_event", **gesture})
+                except: pass
+        gc.on_gesture(lambda g: asyncio.create_task(_gesture_broadcast(g)))
+
     yield
 
 app = FastAPI(lifespan=lifespan)
+
+ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:8340",
+    "http://127.0.0.1:8340",
+    "https://localhost:5173",
+    "https://127.0.0.1:5173",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Jarvis-Token"],
 )
+
+@app.middleware("http")
+async def auth_and_rate_limit_middleware(request: Request, call_next):
+    path = request.url.path
+    client_ip = request.client.host if request.client else "127.0.0.1"
+
+    if path.startswith("/api/"):
+        auth_header = request.headers.get("Authorization", "")
+        custom_header = request.headers.get("X-Jarvis-Token", "")
+        provided_token = ""
+        if auth_header.startswith("Bearer "):
+            provided_token = auth_header[7:].strip()
+        elif custom_header:
+            provided_token = custom_header.strip()
+
+        if not (provided_token and secrets.compare_digest(provided_token, JARVIS_AUTH_TOKEN)):
+            if _is_rate_limited(client_ip):
+                return JSONResponse(status_code=429, content={"detail": "Too many failed authentication attempts. Please wait 60 seconds."})
+            _record_failed_auth(client_ip)
+            await asyncio.sleep(0.1)
+            return JSONResponse(status_code=401, content={"detail": "Unauthorized: Invalid or missing authentication token"})
+
+    try:
+        response = await call_next(request)
+        return response
+    except Exception as err:
+        print(f"Internal Error at {path}: {err}")
+        return JSONResponse(status_code=500, content={"detail": "An internal error occurred."})
+
 
 # ─────────────────────────────────────────────
 # Background context refresh
@@ -316,6 +575,8 @@ Append exactly ONE action tag at the end when needed:
 [ACTION:PROMPT_PROJECT] name ||| prompt
 [ACTION:RUN_SKILL] skill ||| topic
 [ACTION:REWRITE_CODE] instruction
+[ACTION:CLONE_WEBSITE] url
+[ACTION:STARTUP] domain_or_idea
 [ACTION:REMEMBER] fact_about_user
 
 ━━━ LIVE CONTEXT ━━━
@@ -342,6 +603,7 @@ ACTION_TAGS = (
     "BUILD", "BROWSE", "BROWSE_BRAVE", "RESEARCH", "OPEN_TERMINAL",
     "PROMPT_PROJECT", "RUN_SKILL", "ADD_TASK", "ADD_NOTE", "COMPLETE_TASK",
     "REMEMBER", "CREATE_NOTE", "READ_NOTE", "SCREEN", "REWRITE_CODE",
+    "CLONE_WEBSITE", "STARTUP",
     # Superpowers
     "VOLUME", "SCREENSHOT", "CLIPBOARD_READ", "CLIPBOARD_WRITE",
     "SYSTEM_INFO", "FILE_READ", "FILE_WRITE", "RUN_PYTHON", "RUN_COMMAND",
@@ -372,6 +634,10 @@ STT_CORRECTIONS = {
 # ─────────────────────────────────────────────
 def detect_action_fast(text: str) -> Optional[dict]:
     t = text.lower().strip()
+
+    # Do not trigger automatic actions on questions or explanations
+    if any(q in t for q in ["how to", "how do", "why", "what is", "explain", "question", "tutorial", "guide", "help me"]):
+        return None
 
     # Build (Allow long prompts to bypass length check)
     if any(w in t for w in ["develop", "build", "create", "make", "generate", "rebuild"]) and any(w in t for w in ["app", "website", "project", "site", "dashboard", "it", "this", "clone"]):
@@ -539,7 +805,9 @@ def detect_action_fast(text: str) -> Optional[dict]:
 
     # Generic app open
     if t.startswith("open "):
-        app_name = text[5:]
+        app_name = text[5:].strip()
+        if app_name.lower() in ["chrome", "google chrome", "browser"]:
+            return {"action": "BROWSE", "target": "https://www.google.com"}
         if "." in app_name or "localhost" in app_name or app_name.startswith("http"):
             return {"action": "BROWSE", "target": app_name}
         return {"action": "RUN_COMMAND_FAST", "target": app_name}
@@ -774,12 +1042,87 @@ async def execute_extended_action(tag: str, target: str, ws: WebSocket):
         headlines = await fetch_news(target)
         await ws.send_json({"type": "browser_speak", "text": f"Headlines for {target}: {headlines[:500]}"})
 
+    elif tag == "KEYBOARD_TYPE":
+        import pyautogui
+        pyautogui.write(target, interval=0.01)
+        await ws.send_json({"type": "browser_speak", "text": "Type complete, sir."})
+
+    elif tag == "MOUSE_CLICK":
+        import pyautogui
+        pyautogui.click()
+        await ws.send_json({"type": "browser_speak", "text": "Clicked, sir."})
+
+    elif tag == "APP_LAUNCH":
+        import subprocess
+        target_clean = target.lower().strip()
+        cmd = None
+        if target_clean in ["chrome", "google chrome"]:
+            cmd = "start chrome"
+        elif target_clean in ["vs code", "vscode", "code"]:
+            cmd = "code"
+        elif target_clean in ["notepad", "editor"]:
+            cmd = "notepad"
+        elif target_clean in ["calculator", "calc"]:
+            cmd = "calc"
+        else:
+            cmd = target
+        try:
+            subprocess.Popen(cmd, shell=True)
+            await ws.send_json({"type": "browser_speak", "text": f"Launching {target}, sir."})
+        except Exception as e:
+            await ws.send_json({"type": "browser_speak", "text": f"Failed to launch: {e}"})
+
+    elif tag == "WINDOW_CLOSE":
+        import os
+        target_exe = target if target.endswith(".exe") else f"{target}.exe"
+        os.system(f"taskkill /f /im {target_exe}")
+        await ws.send_json({"type": "browser_speak", "text": f"Closing {target}, sir."})
+
+    elif tag == "SYS_VOLUME_UP":
+        import keyboard
+        for _ in range(5):
+            keyboard.press_and_release("volume up")
+        await ws.send_json({"type": "browser_speak", "text": "Volume increased, sir."})
+
+    elif tag == "SYS_VOLUME_DOWN":
+        import keyboard
+        for _ in range(5):
+            keyboard.press_and_release("volume down")
+        await ws.send_json({"type": "browser_speak", "text": "Volume decreased, sir."})
+
     else:
         # Delegate to original actions.py
         asyncio.create_task(actions.execute_action({"action": tag, "target": target}, [], ws))
 
 async def _describe_screenshot_async(image_b64: str, ws: WebSocket):
-    if ANTHROPIC_API_KEY:
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if gemini_key and "your-" not in gemini_key.lower():
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
+            payload = {
+                "contents": [{
+                    "parts": [
+                        {"text": "Describe what's on this screen in 1-2 sentences as J.A.R.V.I.S. the British butler AI — concise, precise, no markdown."},
+                        {
+                            "inlineData": {
+                                "mimeType": "image/png",
+                                "data": image_b64
+                            }
+                        }
+                    ]
+                }]
+            }
+            async with httpx.AsyncClient(timeout=35) as client:
+                res = await client.post(url, json=payload)
+                res.raise_for_status()
+                data = res.json()
+                description = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                await ws.send_json({"type": "browser_speak", "text": description})
+                return
+        except Exception as e:
+            print("Gemini Multimodal describe failed:", e)
+
+    if ANTHROPIC_API_KEY and "your-" not in ANTHROPIC_API_KEY.lower():
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 res = await client.post(
@@ -806,9 +1149,10 @@ async def _describe_screenshot_async(image_b64: str, ws: WebSocket):
             await ws.send_json({"type": "browser_speak", "text": description})
         except Exception as e:
             print("Screenshot describe error (Anthropic):", e)
+            await ws.send_json({"type": "browser_speak", "text": "I have taken the screenshot, sir, but the vision describe API failed."})
     else:
         # Graceful degradation if no API key
-        await ws.send_json({"type": "browser_speak", "text": "I have taken the screenshot, sir, but my visual parsing model requires an API key to describe it."})
+        await ws.send_json({"type": "browser_speak", "text": "I have taken the screenshot, sir, but my visual parsing model requires a valid API key to describe it."})
 
 # ─────────────────────────────────────────────
 # TTS System
@@ -828,16 +1172,32 @@ async def generate_speech_elevenlabs(text: str) -> bytes:
         res.raise_for_status()
         return res.content
 
-async def generate_speech_fish(text: str) -> bytes:
-    key = os.getenv("FISH_API_KEY")
-    if not key:
-        raise Exception("No Fish Key")
-    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-    body    = {"text": text, "reference_id": FISH_VOICE_ID, "format": "mp3"}
-    async with httpx.AsyncClient(timeout=10) as client:
-        res = await client.post(FISH_API_URL, json=body, headers=headers)
-        res.raise_for_status()
-        return res.content
+async def generate_speech_edge(text: str) -> bytes:
+    try:
+        import edge_tts
+        import tempfile
+        import uuid
+        # en-GB-SoniaNeural is an elite, calm British female/butler-style voice
+        # en-GB-RyanNeural is a beautiful calm male British voice
+        voice = os.getenv("EDGE_TTS_VOICE", "en-GB-SoniaNeural")
+        communicate = edge_tts.Communicate(text, voice)
+        temp_path = os.path.join(tempfile.gettempdir(), f"edge_tts_{uuid.uuid4().hex[:8]}.mp3")
+        
+        # Run Edge-TTS communicate natively
+        asyncio.run_coroutine_threadsafe(communicate.save(temp_path), asyncio.get_event_loop())
+        # Or simple await communicate.save since we are in an async function!
+        await communicate.save(temp_path)
+        
+        with open(temp_path, "rb") as f:
+            content = f.read()
+        try:
+            os.remove(temp_path)
+        except:
+            pass
+        return content
+    except Exception as e:
+        print("Edge TTS failed:", e)
+        raise e
 
 async def synthesize_local(text: str):
     if IS_WINDOWS:
@@ -874,16 +1234,19 @@ class TTSManager:
                 await synthesize_local(chunk)
                 continue
             try:
-                if not self.latch_elevenlabs and TTS_PROVIDER in ["auto", "elevenlabs"]:
+                if not self.latch_elevenlabs and TTS_PROVIDER in ["auto", "elevenlabs"] and os.getenv("ELEVENLABS_API_KEY") and "your-elevenlabs" not in os.getenv("ELEVENLABS_API_KEY"):
                     audio_data = await generate_speech_elevenlabs(chunk)
-                elif TTS_PROVIDER in ["auto", "fish"]:
+                elif TTS_PROVIDER in ["auto", "fish"] and os.getenv("FISH_API_KEY"):
                     audio_data = await generate_speech_fish(chunk)
                 else:
-                    raise Exception("No cloud TTS configured")
+                    # Fallback to completely free neural Microsoft Edge TTS!
+                    audio_data = await generate_speech_edge(chunk)
+                
                 b64 = base64.b64encode(audio_data).decode("utf-8")
                 await ws.send_json({"type": "audio", "data": b64, "text": ui_text})
                 await asyncio.sleep(0.5)
-            except Exception:
+            except Exception as e:
+                print("Cloud/Edge TTS failed, using SAPI local fallback. Error:", e)
                 self.latch_elevenlabs = True
                 fallback_active = True
                 await ws.send_json({"type": "tts_fallback", "message": "switching to local voice"})
@@ -903,6 +1266,19 @@ async def generate_response(text: str, history: list, ws: WebSocket) -> str:
     clipboard    = get_clipboard()
     clip_preview = (clipboard[:100] + "...") if len(clipboard) > 100 else clipboard or "(empty)"
 
+    # ── Emotional context ──────────────────────────────────────────────────────
+    emotion_context = ""
+    if EMOTIONAL_ENGINE_AVAILABLE:
+        emotion = emotional_engine.analyze(text)
+        state   = emotional_engine.get_state()
+        prefix  = emotional_engine.get_response_prefix()
+        emotion_context = f"\nUser emotional state: {emotion} (confidence: {state['confidence']:.0%}). {prefix}"
+        # Broadcast emotion update to frontend
+        try:
+            await ws.send_json({"type": "emotion_update", **state})
+        except Exception:
+            pass
+
     system_prompt = JARVIS_SYSTEM_PROMPT.format(
         user_name         = USER_NAME,
         current_time      = current_time,
@@ -915,6 +1291,8 @@ async def generate_response(text: str, history: list, ws: WebSocket) -> str:
         known_projects    = "None",
     )
     system_prompt += "\n\nMemories:\n" + memory.build_memory_context(text)
+    if EMOTIONAL_ENGINE_AVAILABLE:
+        system_prompt += emotion_context
 
     # Filter out empty texts for Pollinations to avoid Client Errors
     msgs = []
@@ -926,6 +1304,8 @@ async def generate_response(text: str, history: list, ws: WebSocket) -> str:
 
     if ANTHROPIC_API_KEY:
         return await _call_claude(system_prompt, msgs, ws)
+    elif GEMINI_API_KEY:
+        return await _call_gemini(system_prompt, msgs, ws)
     return await _call_pollinations(system_prompt, msgs)
 
 async def _call_claude(system_prompt: str, msgs: list, ws: WebSocket) -> str:
@@ -986,6 +1366,50 @@ async def _call_claude(system_prompt: str, msgs: list, ws: WebSocket) -> str:
         print("Claude error:", repr(e))
         return await _call_pollinations(None, msgs)  # fallback
 
+async def _call_gemini(system_prompt: str, msgs: list, ws: WebSocket) -> str:
+    """Gemini 2.0 Flash content generation with simulated streaming to UI."""
+    try:
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+        )
+        contents = []
+        for m in msgs:
+            role = "user" if m["role"] == "user" else "model"
+            contents.append({
+                "role": role,
+                "parts": [{"text": m["content"]}]
+            })
+        payload = {
+            "contents": contents,
+            "systemInstruction": {
+                "parts": [{"text": system_prompt}]
+            },
+            "generationConfig": {
+                "maxOutputTokens": 2048,
+                "temperature": 0.7
+            }
+        }
+        async with httpx.AsyncClient(timeout=45) as client:
+            res = await client.post(url, json=payload)
+            res.raise_for_status()
+            data = res.json()
+            candidate = data.get("candidates", [{}])[0]
+            parts = candidate.get("content", {}).get("parts", [])
+            text = parts[0].get("text", "").strip() if parts else ""
+            
+            if text:
+                # Stream the response text to the frontend in small chunks to show typing indicator
+                words = text.split(" ")
+                for i in range(0, len(words), 3):
+                    chunk = " ".join(words[i:i+3]) + " "
+                    await ws.send_json({"type": "partial_text", "text": chunk})
+                    await asyncio.sleep(0.04)
+            return text or "Processing, sir."
+    except Exception as e:
+        print("Gemini error in server.py:", e)
+        return await _call_pollinations(system_prompt, msgs)
+
 async def _call_pollinations(system_prompt: Optional[str], msgs: list) -> str:
     """Uses robust pollinations API to ensure unlimited usage without client errors"""
     try:
@@ -1038,16 +1462,101 @@ def log_usage(input_tokens, output_tokens, action_type="api"):
 _history: List[dict] = []
 _last_jarvis_response = ""
 
+@app.websocket("/ws")
 @app.websocket("/ws/voice")
 async def websocket_endpoint(websocket: WebSocket):
     global _last_jarvis_response
-    await websocket.accept()
+    
+    if not verify_ws_auth(websocket):
+        await websocket.close(code=4001, reason="Unauthorized Token")
+        return
+
+    requested_sub = websocket.headers.get("sec-websocket-protocol", "")
+    subprotocol = None
+    if "bearer" in requested_sub.lower():
+        subprotocol = [s.strip() for s in requested_sub.split(",") if "bearer" in s.lower() or s.strip() != "bearer"][0] if requested_sub else None
+
+    await websocket.accept(subprotocol=subprotocol)
+    _active_websockets.add(websocket)
     await websocket.send_json({"type": "status", "state": "idle"})
+
 
     try:
         while True:
             data = await websocket.receive_text()
             msg  = json.loads(data)
+
+            # Companion registration
+            if msg.get("type") == "companion_handshake":
+                _companion_websockets.add(websocket)
+                _active_websockets.discard(websocket)
+                print("[WS Link] Secure companion link established from Android!")
+                await websocket.send_json({"type": "status", "state": "connected"})
+                continue
+
+            # Forward phone events from companion app to active HUD websockets
+            if msg.get("type") == "phone_call":
+                event_type = msg.get("event", "incoming_call")
+                caller = msg.get("caller", "Unknown Caller")
+                message = msg.get("message", "")
+                print(f"[Phone System via WS] Event: {event_type} | Caller: {caller} | Msg: {message}")
+                
+                # Broadcast call event to all active HUD websockets
+                broadcast_msg = {
+                    "type": "phone_event",
+                    "event": event_type,
+                    "caller": caller,
+                    "message": message
+                }
+                for ws in list(_active_websockets):
+                    try:
+                        await ws.send_json(broadcast_msg)
+                    except:
+                        pass
+                
+                # If incoming call, speak via HUD
+                if event_type == "incoming_call":
+                    _active_call_caller = caller
+                    msg_speak = f"Sir... incoming WhatsApp call from {caller} detected. Initiating automated call receptionist."
+                    for ws in list(_active_websockets):
+                        try:
+                            await ws.send_json({"type": "browser_speak", "text": msg_speak})
+                        except:
+                            pass
+                elif event_type == "end_call":
+                    _active_call_caller = None
+                    for ws in list(_active_websockets):
+                        try:
+                            await ws.send_json({"type": "browser_speak", "text": "Call completed, sir. Restoring system logs."})
+                        except:
+                            pass
+                continue
+
+            # Forward manual answer_call from HUD to companion app
+            if msg.get("type") == "answer_call":
+                print("[WS Inbound] Relaying answer_call command to Android companion...")
+                for comp_ws in list(_companion_websockets):
+                    try:
+                        await comp_ws.send_json({"type": "answer_call"})
+                    except Exception as e:
+                        print("Failed to send to companion:", e)
+                continue
+
+            # Sync answering result back from companion to HUD
+            if msg.get("type") == "answer_result":
+                success = msg.get("success", False)
+                method = msg.get("method", "none")
+                print(f"[WS Inbound] Companion answered call: success={success}, method={method}")
+                for ws in list(_active_websockets):
+                    try:
+                        await ws.send_json({
+                            "type": "phone_answer_status",
+                            "success": success,
+                            "method": method
+                        })
+                    except:
+                        pass
+                continue
 
             # Interrupt signal — stop audio playback
             if msg.get("type") == "interrupt":
@@ -1057,14 +1566,71 @@ async def websocket_endpoint(websocket: WebSocket):
 
             if msg.get("type") == "fix_self":
                 await websocket.send_json({"type": "status", "state": "thinking"})
-                await asyncio.sleep(2)
+                try:
+                    from optimization_engine import run_self_healing, throttle_ws
+                    jarvis_root = os.path.dirname(os.path.abspath(__file__))
+                    t_ws = throttle_ws(websocket)
+                    await run_self_healing(t_ws, jarvis_root)
+                except Exception as heal_err:
+                    await websocket.send_json({
+                        "type": "process_update",
+                        "message": f"[Debug AI] Self-heal error: {heal_err}",
+                    })
                 await websocket.send_json({"type": "status", "state": "idle"})
                 continue
 
-            if not (msg.get("type") == "transcript" and msg.get("isFinal")):
+            t_server_recv = time.time()
+            t_ws_send = (msg.get("t_send") or (t_server_recv * 1000)) / 1000.0
+            t_stt_end = (msg.get("t_stt_end") or (t_server_recv * 1000)) / 1000.0
+
+            if msg.get("type") == "music_error":
+                fallback_url = msg.get("url")
+                print(f"🎵 [MUSIC SKILL LOG] Received music_error from HUD. Opening fallback URL: {fallback_url}")
+                if fallback_url:
+                    try:
+                        webbrowser.open(fallback_url)
+                    except Exception as err:
+                        print(f"🎵 [MUSIC SKILL LOG] Browser fallback failed: {err}")
                 continue
 
-            user_text = msg.get("text", "").strip()
+            user_text = ""
+            if msg.get("type") == "audio_input":
+                audio_b64 = msg.get("data")
+                if audio_b64:
+                    try:
+                        await websocket.send_json({"type": "status", "state": "transcribing"})
+                        audio_bytes = base64.b64decode(audio_b64)
+                        print(f"🎙️ [Voice Pipeline] Received audio_input: {len(audio_bytes)} bytes")
+                        stt_res = await stt_engine.transcribe_audio_bytes(audio_bytes)
+                        user_text = stt_res.get("text", "").strip()
+                        t_stt_end = time.time()
+                        
+                        # Strip wake word prefix if present
+                        user_text = re.sub(r"^(?:hey\s+)?(?:jarvis|travis|jarves)\b\s*,?\s*", "", user_text, flags=re.IGNORECASE).strip()
+                        
+                        if user_text:
+                            print(f"🎙️ [Voice Pipeline] Transcribed: '{user_text}' via {stt_res.get('engine')} in {stt_res.get('latency_ms'):.1f}ms")
+                            await websocket.send_json({
+                                "type": "transcript_result",
+                                "text": user_text,
+                                "latency_ms": stt_res.get("latency_ms", 0.0),
+                                "engine": stt_res.get("engine", "faster-whisper")
+                            })
+                            await websocket.send_json({"type": "status", "state": "thinking"})
+                        else:
+                            print("🎙️ [Voice Pipeline] No speech recognized in audio input.")
+                            await websocket.send_json({"type": "status", "state": "idle"})
+                            continue
+                    except Exception as e:
+                        print("❌ [Voice Pipeline] STT error:", e)
+                        await websocket.send_json({"type": "status", "state": "idle"})
+                        continue
+            elif msg.get("type") == "transcript" and msg.get("isFinal"):
+                user_text = msg.get("text", "").strip()
+                print(f"💬 [Text Pipeline] Received typed command: '{user_text}'")
+            else:
+                continue
+
             if not user_text:
                 continue
 
@@ -1081,63 +1647,251 @@ async def websocket_endpoint(websocket: WebSocket):
                     print("Echo filtered:", user_text)
                     continue
 
-            await websocket.send_json({"type": "status", "state": "thinking"})
             print(f"User: {user_text}")
 
-            response_text  = ""
+            # ─────────────────────────────────────────────
+            # 1. FAST PATH ROUTING (intent_router.py - Modular Skills)
+            # ─────────────────────────────────────────────
+            t_intent_start = time.time()
+            fast_route = await intent_router.route_intent_fast(user_text, websocket)
+            t_intent = time.time()
+
+            if fast_route and fast_route.get("is_fast"):
+                intent_name = fast_route.get("intent", "FAST")
+                spoken_resp = fast_route.get("spoken_response", "On it, sir.")
+                act_obj     = fast_route.get("action")
+                hud_card    = fast_route.get("hud_card")
+
+                t_tts_start = time.time()
+                try:
+                    await websocket.send_json({"type": "status", "state": "executing"})
+
+                    if hud_card:
+                        await websocket.send_json({"type": "hud_card", "card": hud_card})
+
+                    await websocket.send_json({"type": "browser_speak", "text": spoken_resp})
+                    await websocket.send_json({"type": "status", "state": "speaking"})
+                except Exception as ws_err:
+                    print("WebSocket send warning:", ws_err)
+
+                if act_obj:
+                    asyncio.create_task(actions.execute_action(act_obj, [], websocket))
+
+                _history.append({"from": "user",   "text": user_text})
+                _history.append({"from": "jarvis", "text": spoken_resp})
+                _last_jarvis_response = spoken_resp
+
+                # Print timing latency breakdown
+                ws_delay = max(0.0, (t_server_recv - t_ws_send) * 1000)
+                router_delay = max(0.0, (t_intent - t_server_recv) * 1000)
+                tts_delay = max(0.0, (t_tts_start - t_server_recv) * 1000)
+                total_delay = max(0.0, (time.time() - t_server_recv) * 1000)
+                print(f"""
+⏱️  [LATENCY BREAKDOWN] Command: "{user_text}"
+    ├── Route Path:        FAST_PATH ({intent_name})
+    ├── WS Transit Delay:  {ws_delay:.1f} ms
+    ├── Intent Routing:    {router_delay:.1f} ms
+    ├── First TTS Start:   {tts_delay:.1f} ms
+    └── Total Turnaround:  {total_delay:.1f} ms
+""")
+                try:
+                    await websocket.send_json({"type": "status", "state": "idle"})
+                except Exception:
+                    pass
+                continue
+                continue
+
+            # ─────────────────────────────────────────────
+            # 2. STREAMING LLM ROUTE (Gemini / Claude / Pollinations)
+            # ─────────────────────────────────────────────
+            await websocket.send_json({"type": "status", "state": "thinking"})
+            
+            t_first_token = None
+            t_tts_start = None
+            full_response = ""
+            sentence_buffer = ""
+
+            SYSTEM_PROMPT = "You are JARVIS, an ultra-intelligent, concise, and helpful AI assistant. Respond directly and efficiently."
+
+            async for token in ai_brain.stream_ai(SYSTEM_PROMPT, user_text):
+                if t_first_token is None:
+                    t_first_token = time.time()
+
+                full_response += token
+                sentence_buffer += token
+
+                # Send streaming token to UI
+                await websocket.send_json({"type": "token", "token": token})
+
+                # Sentence-by-Sentence TTS Trigger
+                sentences = re.split(r'(?<=[.!?\n])\s+', sentence_buffer)
+                if len(sentences) > 1:
+                    completed_sentence = sentences[0].strip()
+                    sentence_buffer = " ".join(sentences[1:])
+
+                    clean_sentence = _ACTION_STRIP.sub("", completed_sentence).strip()
+                    clean_sentence = re.sub(r"[*_`\\#]", "", clean_sentence)
+
+                    if clean_sentence and len(clean_sentence) > 3:
+                        if t_tts_start is None:
+                            t_tts_start = time.time()
+                            await websocket.send_json({"type": "status", "state": "speaking"})
+
+                        await websocket.send_json({"type": "browser_speak_chunk", "text": clean_sentence})
+
+            t_llm_done = time.time()
+
+            # Flush remaining sentence buffer
+            if sentence_buffer.strip():
+                clean_sentence = _ACTION_STRIP.sub("", sentence_buffer).strip()
+                clean_sentence = re.sub(r"[*_`\\#]", "", clean_sentence)
+                if clean_sentence:
+                    if t_tts_start is None:
+                        t_tts_start = time.time()
+                        await websocket.send_json({"type": "status", "state": "speaking"})
+                    await websocket.send_json({"type": "browser_speak_chunk", "text": clean_sentence})
+
+            # Check for embedded action tags
             action_to_exec = None
-
-            fast_act = detect_action_fast(user_text)
-            if fast_act:
-                response_text = await execute_fast_action(fast_act, websocket)
-            else:
-                response_text = await generate_response(user_text, _history, websocket)
-
-            # Extract action tag from LLM response
-            match = _ACTION_PATTERN.search(response_text)
+            match = _ACTION_PATTERN.search(full_response)
             if match:
                 groups = match.groups()
                 tag    = groups[0] or groups[3]
                 target = (groups[1] or groups[2] or groups[4] or "").strip()
                 action_to_exec = {"action": tag, "target": target}
-                response_text  = response_text[:match.start()].strip()
 
-            # Clean for TTS
-            clean_text = _ACTION_STRIP.sub("", response_text).strip()
+            clean_text = _ACTION_STRIP.sub("", full_response).strip()
             clean_text = re.sub(r"[*_`\\#]", "", clean_text)
-
             _last_jarvis_response = clean_text
-            print(f"JARVIS: {clean_text.encode('ascii', 'replace').decode('ascii')}")
-
-            await websocket.send_json({"type": "browser_speak", "text": clean_text})
 
             if action_to_exec:
-                tag    = action_to_exec["action"]
+                tag = action_to_exec["action"]
                 target = action_to_exec["target"]
                 await websocket.send_json({"type": "action_queued", "action": tag})
-
-                SUPERPOWER_TAGS = {
-                    "VOLUME", "SCREENSHOT", "CLIPBOARD_READ", "CLIPBOARD_WRITE",
-                    "SYSTEM_INFO", "FILE_READ", "FILE_WRITE", "RUN_PYTHON",
-                    "RUN_COMMAND", "SEND_EMAIL", "SEND_WHATSAPP", "TIMER", "ALARM", "NEWS"
-                }
-                if tag in SUPERPOWER_TAGS:
-                    asyncio.create_task(execute_extended_action(tag, target, websocket))
-                else:
-                    asyncio.create_task(actions.execute_action(action_to_exec, [], websocket))
+                asyncio.create_task(actions.execute_action(action_to_exec, [], websocket))
 
             _history.append({"from": "user",   "text": user_text})
-            _history.append({"from": "jarvis", "text": response_text})
-
-            # Bound history to last 60 turns
+            _history.append({"from": "jarvis", "text": full_response})
             if len(_history) > 60:
                 _history[:] = _history[-60:]
 
-            asyncio.create_task(memory.extract_memories(user_text, response_text))
+            asyncio.create_task(memory.extract_memories(user_text, full_response))
+
+            # Log latency metrics for LLM route
+            ws_delay = max(0.0, (t_server_recv - t_ws_send) * 1000)
+            router_delay = max(0.0, (t_intent - t_server_recv) * 1000)
+            first_token_delay = max(0.0, ((t_first_token or t_llm_done) - t_intent) * 1000)
+            llm_delay = max(0.0, (t_llm_done - t_intent) * 1000)
+            tts_delay = max(0.0, ((t_tts_start or time.time()) - t_server_recv) * 1000)
+            total_delay = max(0.0, (time.time() - t_server_recv) * 1000)
+
+            print(f"""
+⏱️  [LATENCY BREAKDOWN] Command: "{user_text}"
+    ├── Route Path:        LLM_STREAM ({ai_brain.get_active_provider()})
+    ├── WS Transit Delay:  {ws_delay:.1f} ms
+    ├── Intent Routing:    {router_delay:.1f} ms
+    ├── First Token Delay: {first_token_delay:.1f} ms
+    ├── LLM Stream Total:  {llm_delay:.1f} ms
+    ├── First TTS Start:   {tts_delay:.1f} ms
+    └── Total Turnaround:  {total_delay:.1f} ms
+""")
+
             await websocket.send_json({"type": "status", "state": "idle"})
 
-    except WebSocketDisconnect:
-        print("WebSocket client disconnected")
+    except (WebSocketDisconnect, Exception) as e:
+        print(f"WebSocket client disconnected or session ended: {e}")
+    finally:
+        _active_websockets.discard(websocket)
+        _companion_websockets.discard(websocket)
+
+
+# ─────────────────────────────────────────────
+# Phone Webhook Integration & Call Receptionist
+# ─────────────────────────────────────────────
+_active_call_caller = None
+
+@app.post("/api/phone/event")
+async def phone_event_webhook(data: dict):
+    global _active_call_caller
+    event_type = data.get("type", "incoming_call")  # incoming_call | call_speech | sms | whatsapp | end_call
+    caller = data.get("caller", "Pepper Potts")
+    message = data.get("message", "")
+    text = data.get("text", "")
+    
+    print(f"[Phone System] Event: {event_type} | Caller: {caller} | Msg: {message or text}")
+    
+    # Broadcast to all active websockets
+    broadcast_msg = {
+        "type": "phone_event",
+        "event": event_type,
+        "caller": caller,
+        "message": message or text
+    }
+    
+    for ws in list(_active_websockets):
+        try:
+            await ws.send_json(broadcast_msg)
+        except:
+            pass
+
+    # Autonomous Action Triggering
+    if event_type == "incoming_call":
+        _active_call_caller = caller
+        msg_speak = f"Sir... incoming call from {caller} detected. Initiating automated call receptionist."
+        for ws in list(_active_websockets):
+            try:
+                await ws.send_json({"type": "browser_speak", "text": msg_speak})
+            except:
+                pass
+                
+    elif event_type == "call_speech" and text:
+        # Automated AI call receptionist conversation flow!
+        prompt = f"""
+        You are J.A.R.V.I.S., Madhan's personal AI assistant. 
+        You are answering a live phone call on behalf of Madhan, who is currently busy working in the lab.
+        The caller ({caller}) says: "{text}".
+        Formulate a polite, calm, cinematic 1-sentence reply informing them that Madhan is occupied, and ask for the purpose of their call.
+        Keep it concise, prose only, spoken tone. Example: "Sir is currently busy working, Pepper. May I take a message?"
+        """
+        try:
+            # Call AI core
+            from ai_brain import call_ai
+            reply = await call_ai(JARVIS_SYSTEM_PROMPT, prompt)
+            reply_clean = _ACTION_STRIP.sub("", reply).strip().replace("*", "").replace("_", "")
+            
+            # Broadcast the transcription back to HUD!
+            for ws in list(_active_websockets):
+                try:
+                    await ws.send_json({
+                        "type": "call_transcription",
+                        "caller": caller,
+                        "caller_text": text,
+                        "jarvis_reply": reply_clean
+                    })
+                    # Speak to the caller via audio
+                    await ws.send_json({"type": "browser_speak", "text": reply_clean})
+                except:
+                    pass
+        except Exception as e:
+            print("Auto-call answering AI failed:", e)
+            
+    elif event_type == "end_call":
+        _active_call_caller = None
+        for ws in list(_active_websockets):
+            try:
+                await ws.send_json({"type": "browser_speak", "text": "Call completed, sir. Restoring system logs."})
+            except:
+                pass
+                
+    elif event_type in ["sms", "whatsapp"]:
+        msg_speak = f"New {event_type.upper()} message from {caller}."
+        for ws in list(_active_websockets):
+            try:
+                await ws.send_json({"type": "browser_speak", "text": msg_speak})
+            except:
+                pass
+                
+    return {"status": "event_broadcasted"}
 
 # ─────────────────────────────────────────────
 # REST API Routes
@@ -1147,15 +1901,133 @@ def health():
     return {
         "status":   "online",
         "name":     "JARVIS",
-        "version":  "2.0.0-supercharged",
+        "version":  "3.0.0-evolved",
         "model":    CLAUDE_MODEL if ANTHROPIC_API_KEY else "pollinations-fallback",
         "features": [
             "web_search", "streaming", "timers", "alarms",
             "screenshot+vision", "clipboard", "system_info",
             "file_read_write", "python_exec", "shell_exec",
-            "email", "whatsapp", "live_news", "interrupt"
+            "email", "whatsapp", "live_news", "interrupt",
+            "emotional_ai", "face_security", "gesture_control",
+            "dream_mode", "cyber_defense", "power_management",
+            "memory_timeline", "knowledge_graph",
         ],
+        "systems": {
+            "emotional_engine": EMOTIONAL_ENGINE_AVAILABLE,
+            "face_security":    FACE_SECURITY_AVAILABLE,
+            "gesture_control":  GESTURE_AVAILABLE,
+            "dream_mode":       DREAM_MODE_AVAILABLE,
+            "cyber_defense":    CYBER_DEFENSE_AVAILABLE,
+            "power_manager":    POWER_MANAGER_AVAILABLE,
+            "memory_timeline":  TIMELINE_AVAILABLE,
+        }
     }
+
+# ── Evolution System Endpoints ─────────────────────────────────────────────────
+
+@app.get("/api/emotion")
+def get_emotion():
+    if not EMOTIONAL_ENGINE_AVAILABLE:
+        return {"available": False}
+    return emotional_engine.get_state()
+
+@app.get("/api/face/status")
+def get_face_status():
+    if not FACE_SECURITY_AVAILABLE:
+        return {"available": False}
+    return face_security.get_system().get_status()
+
+@app.post("/api/face/start")
+def start_face_security():
+    if not FACE_SECURITY_AVAILABLE:
+        return {"status": "unavailable"}
+    ok = face_security.get_system().start()
+    return {"status": "started" if ok else "failed"}
+
+@app.post("/api/face/stop")
+def stop_face_security():
+    if not FACE_SECURITY_AVAILABLE:
+        return {"status": "unavailable"}
+    face_security.get_system().stop()
+    return {"status": "stopped"}
+
+@app.post("/api/face/enroll")
+async def enroll_face(data: dict):
+    if not FACE_SECURITY_AVAILABLE:
+        return {"status": "unavailable"}
+    name  = data.get("name", "User")
+    image = data.get("image_b64", "")
+    ok = face_security.get_system().enroll_user(name, image)
+    return {"status": "enrolled" if ok else "failed", "name": name}
+
+@app.get("/api/gesture/status")
+def get_gesture_status():
+    if not GESTURE_AVAILABLE:
+        return {"available": False}
+    return gesture_control.get_controller().get_status()
+
+@app.post("/api/gesture/start")
+def start_gesture():
+    if not GESTURE_AVAILABLE:
+        return {"status": "unavailable"}
+    ok = gesture_control.get_controller().start()
+    return {"status": "started" if ok else "failed"}
+
+@app.get("/api/dream/status")
+def get_dream_status():
+    if not DREAM_MODE_AVAILABLE:
+        return {"available": False}
+    return dream_mode.get_dream().get_status()
+
+@app.get("/api/cyber/status")
+def get_cyber_status():
+    if not CYBER_DEFENSE_AVAILABLE:
+        return {"available": False}
+    return cyber_defense.get_defense().get_status()
+
+@app.get("/api/cyber/network")
+def get_network_stats():
+    if not CYBER_DEFENSE_AVAILABLE:
+        return {}
+    return cyber_defense.get_defense().get_network_stats()
+
+@app.get("/api/power/status")
+def get_power_status():
+    if not POWER_MANAGER_AVAILABLE:
+        return {"available": False}
+    return power_manager.get_manager().get_status()
+
+@app.post("/api/power/mode")
+def set_power_mode(data: dict):
+    if not POWER_MANAGER_AVAILABLE:
+        return {"status": "unavailable"}
+    mode = data.get("mode", "balanced")
+    ok = power_manager.get_manager().set_mode(mode)
+    return {"status": "ok" if ok else "invalid_mode", "mode": mode}
+
+@app.get("/api/memory/timeline")
+def get_memory_timeline(limit: int = 50, type: str = None):
+    if not TIMELINE_AVAILABLE:
+        return []
+    return memory_timeline.get_timeline(limit=limit, filter_type=type)
+
+@app.get("/api/memory/graph")
+def get_knowledge_graph():
+    if not TIMELINE_AVAILABLE:
+        return {"nodes": [], "edges": []}
+    return memory_timeline.get_knowledge_graph()
+
+@app.get("/api/memory/stats")
+def get_memory_stats():
+    if not TIMELINE_AVAILABLE:
+        return {}
+    return memory_timeline.get_stats()
+
+@app.get("/api/memory/search")
+def search_memory(q: str = "", limit: int = 20):
+    if not TIMELINE_AVAILABLE or not q:
+        return []
+    return memory_timeline.search_timeline(q, limit=limit)
 
 @app.get("/api/usage")
 def get_usage():
@@ -1175,11 +2047,11 @@ def get_tasks():
 
 @app.post("/api/tasks")
 def spawn_task(data: dict):
-    memory.add_task(
-        data.get("priority", "medium"),
-        data.get("title", "Untitled"),
-        data.get("description", ""),
-        data.get("due_date", "")
+    memory.create_task(
+        title=data.get("title", "Untitled"),
+        description=data.get("description", ""),
+        priority=data.get("priority", "medium"),
+        due_date=data.get("due_date", "")
     )
     return {"status": "ok"}
 
@@ -1223,12 +2095,68 @@ async def news_route(data: dict):
 def list_projects():
     return []
 
+@app.get("/api/files")
+def get_files_tree():
+    import os
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
+    def build_tree(path):
+        name = os.path.basename(path)
+        if os.path.isdir(path):
+            if name in [".git", ".venv", "node_modules", "dist", "__pycache__", ".idea", ".gradle", "build"]:
+                return None
+            children = []
+            try:
+                for entry in sorted(os.listdir(path)):
+                    child_path = os.path.join(path, entry)
+                    child_node = build_tree(child_path)
+                    if child_node:
+                        children.append(child_node)
+            except Exception:
+                pass
+            return {"name": name, "type": "directory", "children": children, "path": os.path.relpath(path, base_dir).replace("\\", "/")}
+        else:
+            return {"name": name, "type": "file", "path": os.path.relpath(path, base_dir).replace("\\", "/")}
+            
+    tree = []
+    try:
+        for entry in sorted(os.listdir(base_dir)):
+            node_path = os.path.join(base_dir, entry)
+            node = build_tree(node_path)
+            if node:
+                tree.append(node)
+    except Exception as e:
+        return {"error": str(e)}
+    return tree
+
+WORKSPACE_ROOT = Path(__file__).resolve().parent
+
+def validate_safe_workspace_path(path_str: str) -> Path:
+    if not path_str:
+        return WORKSPACE_ROOT
+    clean_rel = path_str.lstrip("/").lstrip("\\")
+    target = (WORKSPACE_ROOT / clean_rel).resolve()
+    if target != WORKSPACE_ROOT and WORKSPACE_ROOT not in target.parents:
+        raise HTTPException(status_code=403, detail="Access denied: Path outside workspace")
+    return target
+
+@app.get("/api/files/content")
+def get_file_content(path: str):
+    target = validate_safe_workspace_path(path)
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    try:
+        content = target.read_text(encoding="utf-8", errors="ignore")
+        return {"content": content}
+    except Exception:
+        return JSONResponse(status_code=500, content={"detail": "Failed to read file content"})
+
 @app.post("/api/restart")
 async def restart_server():
     if IS_WINDOWS:
-        os.system(f'start cmd /c "ping 127.0.0.1 -n 2 >nul && taskkill /F /PID {os.getpid()} && python server.py"')
+        os.system(f'start cmd /c "ping 127.0.0.1 -n 2 >nul && taskkill /F /PID {os.getpid()} && .venv\\Scripts\\python.exe server.py"')
     else:
-        os.system("sleep 2 && kill -9 $(pgrep -f 'server.py') && python server.py &")
+        os.system("sleep 2 && kill -9 $(pgrep -f 'server.py') && .venv/bin/python server.py &")
     return {"status": "restarting"}
 
 @app.post("/api/wake")
@@ -1263,8 +2191,8 @@ async def test_anthropic():
                 json={"model": CLAUDE_MODEL, "max_tokens": 10, "messages": [{"role": "user", "content": "ping"}]}
             )
         return {"status": "ok" if res.status_code == 200 else "error", "http_status": res.status_code}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    except Exception:
+        return {"status": "error", "message": "Failed to connect to Anthropic endpoint"}
 
 @app.post("/api/settings/test-fish")
 def test_fish():
@@ -1299,6 +2227,11 @@ def save_prefs(data: dict):
         TTS_PROVIDER = data["tts_provider"]
     return {"status": "ok"}
 
+@app.get("/api/skills")
+def get_skills():
+    return {"skills": intent_router.get_all_skills_manifest()}
+
+
 # ─────────────────────────────────────────────
 # Entry Point
 # ─────────────────────────────────────────────
@@ -1309,6 +2242,7 @@ if __name__ == "__main__":
     ssl_args = {}
     if os.path.exists("cert.pem") and os.path.exists("key.pem"):
         ssl_args = {"ssl_keyfile": "key.pem", "ssl_certfile": "cert.pem"}
+
 
     print(f"""
   JARVIS v2.0 — Supercharged  |  Port {DEFAULT_PORT}

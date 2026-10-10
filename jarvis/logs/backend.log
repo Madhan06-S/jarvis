@@ -1,6 +1,60 @@
-INFO:     Started server process [27896]
+INFO:     Started server process [31612]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     Uvicorn running on http://127.0.0.1:8340 (Press CTRL+C to quit)
-INFO:     127.0.0.1:58792 - "WebSocket /ws/voice" [accepted]
+INFO:     Uvicorn running on http://0.0.0.0:8340 (Press CTRL+C to quit)
+INFO:     127.0.0.1:53617 - "WebSocket /ws/voice" [accepted]
 INFO:     connection open
+
+  JARVIS v2.0 — Supercharged  |  Port 8340
+  Model  : claude-sonnet-4-20250514
+  TTS    : auto
+  User   : sir
+  
+[CyberDefense] Cyber defense system online.
+[PowerManager] AI power management online.
+INFO:     127.0.0.1:53618 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65299 - "GET /api/dream/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65300 - "GET /api/dream/status HTTP/1.1" 200 OK
+Backend STT error: 
+INFO:     127.0.0.1:65301 - "GET /api/dream/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57341 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57348 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57359 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57361 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57365 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54985 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49765 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49770 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62258 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51226 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51231 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51235 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51239 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51247 - "GET /api/files HTTP/1.1" 200 OK
+[DreamMode] Entering dream state #1
+[Gemini] 429 Rate Limit. Waiting 3s (attempt 1/4)...
+[Gemini] 429 Rate Limit. Waiting 6s (attempt 2/4)...
+INFO:     127.0.0.1:51254 - "GET /api/files HTTP/1.1" 200 OK
+[Gemini] 429 Rate Limit. Waiting 9s (attempt 3/4)...
+INFO:     127.0.0.1:51258 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     127.0.0.1:63042 - "WebSocket /ws/voice" [accepted]
+INFO:     connection open
+WebSocket client disconnected
+[Gemini] 429 Rate Limit. Waiting 12s (attempt 4/4)...
+INFO:     127.0.0.1:53736 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58346 - "GET /api/dream/status HTTP/1.1" 200 OK
+[DreamMode] Thought: ...
+INFO:     127.0.0.1:64539 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58905 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     127.0.0.1:53476 - "WebSocket /ws/voice" [accepted]
+INFO:     connection open
+WebSocket client disconnected
+INFO:     127.0.0.1:53477 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55904 - "GET /api/dream/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55035 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65034 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54620 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     Shutting down
