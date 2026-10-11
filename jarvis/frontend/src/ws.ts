@@ -4,6 +4,9 @@ export interface JarvisSocket {
   onConnectionChange(handler: (connected: boolean) => void): void;
   close(): void;
   isConnected(): boolean;
+  getUrl(): string;
+  getReadyState(): number;
+  getReadyStateText(): string;
 }
 
 const THROTTLE_TYPES = new Set([
@@ -18,6 +21,7 @@ const MAX_QUEUE = 64;
 
 export function createSocket(url: string): JarvisSocket {
   let ws: WebSocket | null = null;
+  let activeUrl = url;
   let connecting = false;
   let connected = false;
   let reconnectDelay = 1000;
@@ -74,21 +78,21 @@ export function createSocket(url: string): JarvisSocket {
     connecting = true;
 
     const token = localStorage.getItem('jarvis_token') || '';
-    let finalUrl = url;
-    if (token && !finalUrl.includes('token=')) {
-      finalUrl += (finalUrl.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token);
-    }
+    activeUrl = url.split('?')[0];
+
+    console.log(`[WS Init] Connecting WebSocket to: ${activeUrl}`);
 
     try {
-      ws = token ? new WebSocket(finalUrl, [`bearer.${token}`]) : new WebSocket(finalUrl);
+      ws = token ? new WebSocket(activeUrl, ['bearer', token]) : new WebSocket(activeUrl);
     } catch {
-      ws = new WebSocket(finalUrl);
+      ws = new WebSocket(activeUrl);
     }
 
     ws.onopen = () => {
       connecting = false;
       connected = true;
       reconnectDelay = 1000;
+      console.log(`[WS Open] Connected to ${activeUrl}. readyState: ${ws?.readyState}`);
       connectionHandlers.forEach((h) => h(true));
     };
 
@@ -98,6 +102,7 @@ export function createSocket(url: string): JarvisSocket {
         connected = false;
         connectionHandlers.forEach((h) => h(false));
       }
+      console.warn(`[WS Close] Socket closed (code: ${event.code}, reason: '${event.reason}')`);
       if (event.code === 4001 || event.code === 1008) {
         console.warn("[WS Auth] Connection rejected (Unauthorized Token)");
         window.dispatchEvent(new CustomEvent("jarvis_auth_failed"));
@@ -107,13 +112,15 @@ export function createSocket(url: string): JarvisSocket {
       reconnectDelay = Math.min(reconnectDelay * 2, maxDelay);
     };
 
-    ws.onerror = () => {
+    ws.onerror = (e) => {
+      console.error("[WS Error] Socket error occurred:", e);
       ws?.close();
     };
 
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
+        console.log(`[WS Inbound] Received message (type: '${msg.type || 'unknown'}')`);
         enqueue(msg);
       } catch {
         /* ignore malformed */
@@ -125,7 +132,17 @@ export function createSocket(url: string): JarvisSocket {
 
   return {
     send: (data) => {
-      if (connected && ws) ws.send(JSON.stringify(data));
+      const readyStateCode = ws ? ws.readyState : 3;
+      const stateStr = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][readyStateCode] || String(readyStateCode);
+      const sizeInfo = data.type === 'audio_input' && typeof data.data === 'string'
+        ? ` | Payload: ${data.data.length} b64 chars`
+        : '';
+      console.log(`[WS Outbound] Sending '${data.type}'${sizeInfo} | readyState: ${stateStr} (${readyStateCode}) | URL: ${activeUrl}`);
+      if (connected && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(data));
+      } else {
+        console.warn(`[WS Outbound] Dropped '${data.type}' — Socket not in OPEN state (current state: ${stateStr})`);
+      }
     },
     onMessage: (h) => messageHandlers.push(h),
     onConnectionChange: (h) => connectionHandlers.push(h),
@@ -135,6 +152,9 @@ export function createSocket(url: string): JarvisSocket {
         ws.close();
       }
     },
-    isConnected: () => connected,
+    isConnected: () => connected && ws?.readyState === WebSocket.OPEN,
+    getUrl: () => activeUrl,
+    getReadyState: () => ws ? ws.readyState : 3,
+    getReadyStateText: () => ws ? (['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][ws.readyState] || String(ws.readyState)) : 'CLOSED',
   };
 }

@@ -157,15 +157,16 @@ def _record_failed_auth(ip: str):
 def verify_ws_auth(websocket: WebSocket) -> bool:
     client_ip = websocket.client.host if websocket.client else "127.0.0.1"
 
-    # Extract token from subprotocols, headers, or query string
-    subprotocols = websocket.headers.get("sec-websocket-protocol", "").split(",")
+    # Extract token strictly from WebSocket subprotocols or headers (NEVER query string!)
+    subprotocols = [s.strip() for s in websocket.headers.get("sec-websocket-protocol", "").split(",") if s.strip()]
     provided_token = ""
     for sub in subprotocols:
-        sub = sub.strip()
         if sub.startswith("bearer.") or sub.startswith("bearer="):
             provided_token = sub[7:]
-        elif sub and sub != "bearer":
+            break
+        elif sub != "bearer":
             provided_token = sub
+            break
 
     if not provided_token:
         auth_h = websocket.headers.get("authorization", "")
@@ -174,10 +175,10 @@ def verify_ws_auth(websocket: WebSocket) -> bool:
         else:
             provided_token = websocket.headers.get("x-jarvis-token", "")
 
-    if not provided_token:
-        provided_token = websocket.query_params.get("token", "")
+    # Query string fallback intentionally removed for security (prevents URL token leakage)
 
     if provided_token and secrets.compare_digest(provided_token, JARVIS_AUTH_TOKEN):
+        _failed_auth_attempts.pop(client_ip, None)
         return True
 
     if _is_rate_limited(client_ip):
@@ -330,7 +331,9 @@ async def auth_and_rate_limit_middleware(request: Request, call_next):
         elif custom_header:
             provided_token = custom_header.strip()
 
-        if not (provided_token and secrets.compare_digest(provided_token, JARVIS_AUTH_TOKEN)):
+        if provided_token and secrets.compare_digest(provided_token, JARVIS_AUTH_TOKEN):
+            _failed_auth_attempts.pop(client_ip, None)
+        else:
             if _is_rate_limited(client_ip):
                 return JSONResponse(status_code=429, content={"detail": "Too many failed authentication attempts. Please wait 60 seconds."})
             _record_failed_auth(client_ip)
@@ -1477,8 +1480,12 @@ async def websocket_endpoint(websocket: WebSocket):
 
     requested_sub = websocket.headers.get("sec-websocket-protocol", "")
     subprotocol = None
-    if "bearer" in requested_sub.lower():
-        subprotocol = [s.strip() for s in requested_sub.split(",") if "bearer" in s.lower() or s.strip() != "bearer"][0] if requested_sub else None
+    if requested_sub:
+        subs = [s.strip() for s in requested_sub.split(",") if s.strip()]
+        if "bearer" in subs:
+            subprotocol = "bearer"
+        elif subs:
+            subprotocol = subs[0]
 
     await websocket.accept(subprotocol=subprotocol)
     _active_websockets.add(websocket)
@@ -1489,6 +1496,10 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             data = await websocket.receive_text()
             msg  = json.loads(data)
+
+            route_path = websocket.scope.get("path", "/ws")
+            msg_type = msg.get("type", "unknown")
+            print(f"📥 [WS Inbound ({client_host} on {route_path})] Received msg type: '{msg_type}'")
 
             # Companion registration
             if msg.get("type") == "companion_handshake":
@@ -1604,31 +1615,59 @@ async def websocket_endpoint(websocket: WebSocket):
                     try:
                         await websocket.send_json({"type": "status", "state": "transcribing"})
                         audio_bytes = base64.b64decode(audio_b64)
-                        print(f"🎙️ [Voice Pipeline] Received audio_input: {len(audio_bytes)} bytes")
+                        print(f"🎙️ [Voice Pipeline ({client_host} on {route_path})] Received audio_input: b64_len={len(audio_b64)}, decoded_bytes={len(audio_bytes)}")
                         stt_res = await stt_engine.transcribe_audio_bytes(audio_bytes)
                         user_text = stt_res.get("text", "").strip()
                         t_stt_end = time.time()
-                        
+
+                        if stt_res.get("error") and not user_text:
+                            err_detail = stt_res.get("error")
+                            print(f"❌ [Voice Pipeline] STT engine reported error: {err_detail}")
+                            await websocket.send_json({
+                                "type": "transcript_result",
+                                "text": "",
+                                "empty": True,
+                                "error": err_detail,
+                                "latency_ms": stt_res.get("latency_ms", 0.0),
+                                "engine": stt_res.get("engine", "faster-whisper")
+                            })
+                            await websocket.send_json({"type": "status", "state": "idle"})
+                            continue
+
                         # Strip wake word prefix if present
                         user_text = re.sub(r"^(?:hey\s+)?(?:jarvis|travis|jarves)\b\s*,?\s*", "", user_text, flags=re.IGNORECASE).strip()
-                        
+
                         if user_text:
                             print(f"🎙️ [Voice Pipeline] Transcribed: '{user_text}' via {stt_res.get('engine')} in {stt_res.get('latency_ms'):.1f}ms")
                             await websocket.send_json({
                                 "type": "transcript_result",
                                 "text": user_text,
+                                "empty": False,
                                 "latency_ms": stt_res.get("latency_ms", 0.0),
                                 "engine": stt_res.get("engine", "faster-whisper")
                             })
                             await websocket.send_json({"type": "status", "state": "thinking"})
                         else:
-                            print("🎙️ [Voice Pipeline] No speech recognized in audio input.")
+                            print("🎙️ [Voice Pipeline] Empty speech recognized in audio input.")
+                            await websocket.send_json({
+                                "type": "transcript_result",
+                                "text": "",
+                                "empty": True,
+                                "latency_ms": stt_res.get("latency_ms", 0.0),
+                                "engine": stt_res.get("engine", "faster-whisper")
+                            })
                             await websocket.send_json({"type": "status", "state": "idle"})
                             continue
                     except Exception as e:
                         import traceback
-                        print(f"❌ [Voice Pipeline] STT error: {e}")
+                        print(f"❌ [Voice Pipeline] STT exception: {e}")
                         traceback.print_exc()
+                        await websocket.send_json({
+                            "type": "transcript_result",
+                            "text": "",
+                            "empty": True,
+                            "error": str(e)
+                        })
                         await websocket.send_json({"type": "status", "state": "idle"})
                         continue
             elif msg.get("type") == "transcript" and msg.get("isFinal"):

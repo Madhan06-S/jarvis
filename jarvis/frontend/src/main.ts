@@ -379,12 +379,16 @@ function main() {
   const wsHost = location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? '127.0.0.1' : location.hostname;
   const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsPort = location.port === '5173' || location.port === '' ? (location.port === '' ? '' : ':8340') : `:${location.port}`;
+  console.log(`⚡ [JARVIS HUD] v3.0.4-LIVE-MIC loaded fresh at ${new Date().toISOString()}`);
+
   const wsUrl = `${wsProtocol}//${wsHost}${wsPort || ':8340'}/ws/voice`;
   const socket = createSocket(wsUrl);
 
-
   socket.onConnectionChange(conn => {
-    if (conn) { errEl.style.opacity='0'; setTimeout(()=>setState('listening'),1000); }
+    if (conn) {
+      errEl.style.opacity='0';
+      setTimeout(()=>setState('listening'),1000);
+    }
     else { errEl.innerText='Reconnecting to JARVIS...'; errEl.style.opacity='1'; voice.pause(); setState('idle'); }
   });
   audio.onFinished(() => { setState('idle'); voice.resetWakeState(); });
@@ -595,13 +599,35 @@ function main() {
       }
     } else if (type==='audio' && msg.data) {
       setState('speaking'); audio.enqueue(msg.data as string);
-    } else if (type==='transcript_result' && msg.text) {
-      console.log(`[Voice Pipeline] HUD received transcript_result: "${msg.text}" (${msg.engine || 'faster-whisper'}, ${Math.round((msg.latency_ms as number) || 0)}ms)`);
+    } else if (type==='stt_error') {
       resetVoiceWatchdog();
-      appendHudLog('STT_TRANSCRIPT', `[${msg.engine || 'faster-whisper'}] "${msg.text}" (${Math.round((msg.latency_ms as number) || 0)}ms)`, '#00ff88');
-      statusEl.innerText = `"${msg.text}"`;
+      const errMsg = (msg.message as string) || 'STT TRANSCRIPTION FAILED';
+      console.warn(`[Voice Pipeline] Backend STT error received: ${errMsg}`);
+      appendHudLog('STT_ERROR', errMsg, '#ff3300');
+      errEl.innerText = errMsg;
+      errEl.style.opacity = '1';
+      setTimeout(() => { errEl.style.opacity = '0'; }, 6000);
+      setState('idle');
+    } else if (type==='transcript_result') {
+      resetVoiceWatchdog();
+      if (msg.text) {
+        console.log(`[Voice Pipeline] HUD received transcript_result: "${msg.text}" (${msg.engine || 'faster-whisper'}, ${Math.round((msg.latency_ms as number) || 0)}ms)`);
+        appendHudLog('STT_TRANSCRIPT', `[${msg.engine || 'faster-whisper'}] "${msg.text}" (${Math.round((msg.latency_ms as number) || 0)}ms)`, '#00ff88');
+        statusEl.innerText = `"${msg.text}"`;
+      } else {
+        console.log(`[Voice Pipeline] HUD received empty transcript.`);
+        appendHudLog('STT_EMPTY', "DIDN'T CATCH THAT — TRY AGAIN", '#ffaa00');
+        statusEl.innerText = "DIDN'T CATCH THAT — TRY AGAIN";
+        errEl.innerText = "DIDN'T CATCH THAT — TRY AGAIN";
+        errEl.style.opacity = '1';
+        setTimeout(() => { errEl.style.opacity = '0'; }, 3500);
+        setState('idle');
+      }
     } else if (type==='status' && msg.state) {
-      if (msg.state==='idle' && audio.isIdle()) setState('idle');
+      if (msg.state==='idle') {
+        resetVoiceWatchdog();
+        if (audio.isIdle()) setState('idle');
+      }
       else if (msg.state==='transcribing') setState('transcribing');
       else if (msg.state==='thinking') setState('thinking');
       else if (msg.state==='executing') setState('executing');

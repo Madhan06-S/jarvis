@@ -17,14 +17,48 @@ function mergeBuffers(channelBuffers: Float32Array[], sampleRate: number): Audio
   } as unknown as AudioBuffer;
 }
 
-function bufferToWav(buffer: AudioBuffer): Blob {
-  const numOfChan = buffer.numberOfChannels;
-  const length = buffer.length * numOfChan * 2 + 44;
+function resampleBufferTo16k(audioData: Float32Array, originalSampleRate: number): Float32Array {
+  if (originalSampleRate === 16000) return audioData;
+  const ratio = originalSampleRate / 16000;
+  const newLength = Math.round(audioData.length / ratio);
+  const result = new Float32Array(newLength);
+  for (let i = 0; i < newLength; i++) {
+    const origIndex = i * ratio;
+    const i1 = Math.floor(origIndex);
+    const i2 = Math.min(i1 + 1, audioData.length - 1);
+    const weight = origIndex - i1;
+    result[i] = audioData[i1] * (1 - weight) + audioData[i2] * weight;
+  }
+  return result;
+}
+
+function bufferTo16kWav(buffer: AudioBuffer): { blob: Blob, peakAmp: number, durationSec: number, originalRate: number } {
+  const originalRate = buffer.sampleRate;
+  const rawChannel = buffer.getChannelData(0);
+  const data16k = resampleBufferTo16k(rawChannel, originalRate);
+
+  let peakAmp = 0;
+  for (let i = 0; i < data16k.length; i++) {
+    const val = Math.abs(data16k[i]);
+    if (val > peakAmp) peakAmp = val;
+  }
+  const durationSec = data16k.length / 16000;
+
+  // Gentle gain boost for soft mic input so Whisper receives clear signal
+  const boostGain = (peakAmp > 0.002 && peakAmp < 0.45) ? Math.min(3.5, 0.75 / peakAmp) : 1.0;
+
+  const targetSampleRate = 16000;
+  const numOfChan = 1;
+  const length = data16k.length * 2 + 44;
   const bufferArr = new ArrayBuffer(length);
   const view = new DataView(bufferArr);
-  const channels: Float32Array[] = [];
-  const sampleRate = buffer.sampleRate;
   let pos = 0;
+
+  function writeString(s: string) {
+    for (let i = 0; i < s.length; i++) {
+      view.setUint8(pos++, s.charCodeAt(i));
+    }
+  }
 
   function setUint16(data: number) {
     view.setUint16(pos, data, true);
@@ -36,37 +70,30 @@ function bufferToWav(buffer: AudioBuffer): Blob {
     pos += 4;
   }
 
-  // Write WAV header
-  setUint32(0x46464952); // "RIFF"
-  setUint32(length - 8); // file length - 8
-  setUint32(0x45564157); // "WAVE"
-  setUint32(0x20746d66); // "fmt " chunk
-  setUint32(16);         // format chunk length
-  setUint16(1);          // sample format (raw PCM)
-  setUint16(numOfChan);  // channel count
-  setUint32(sampleRate); // sample rate
-  setUint32(sampleRate * 2 * numOfChan); // byte rate
-  setUint16(numOfChan * 2); // block align
-  setUint16(16);         // bits per sample
-  setUint32(0x61746164); // "data" chunk
-  setUint32(buffer.length * numOfChan * 2); // chunk length
+  // Write standard canonical WAV header (16 kHz, Mono, 16-bit PCM)
+  writeString('RIFF');
+  setUint32(length - 8);
+  writeString('WAVE');
+  writeString('fmt ');
+  setUint32(16);                               // subchunk1size (16 for PCM)
+  setUint16(1);                                // audioFormat (1 = PCM)
+  setUint16(numOfChan);                        // numChannels (1)
+  setUint32(targetSampleRate);                 // sampleRate (16000)
+  setUint32(targetSampleRate * 2 * numOfChan); // byteRate (32000)
+  setUint16(numOfChan * 2);                    // blockAlign (2)
+  setUint16(16);                               // bitsPerSample (16)
+  writeString('data');
+  setUint32(data16k.length * 2);
 
-  for (let i = 0; i < numOfChan; i++) {
-    channels.push(buffer.getChannelData(i));
+  for (let i = 0; i < data16k.length; i++) {
+    let sample = Math.max(-1, Math.min(1, data16k[i] * boostGain));
+    sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+    view.setInt16(pos, sample, true);
+    pos += 2;
   }
 
-  let offset = 0;
-  while (pos < length) {
-    for (let i = 0; i < numOfChan; i++) {
-      let sample = Math.max(-1, Math.min(1, channels[i][offset]));
-      sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-      view.setInt16(pos, sample, true);
-      pos += 2;
-    }
-    offset++;
-  }
-
-  return new Blob([bufferArr], { type: 'audio/wav' });
+  const blob = new Blob([bufferArr], { type: 'audio/wav' });
+  return { blob, peakAmp, durationSec, originalRate };
 }
 
 export class VoiceInput {
@@ -209,12 +236,15 @@ export class VoiceInput {
 
     const sampleRate = this.audioCtx.sampleRate;
     const merged = mergeBuffers(this.audioChunks, sampleRate);
-    const wavBlob = bufferToWav(merged);
+    const { blob, peakAmp, durationSec, originalRate } = bufferTo16kWav(merged);
 
-    console.log(`[Voice VAD] Encoded audio chunk: ${wavBlob.size} bytes (${sampleRate}Hz)`);
+    console.log(`🎙️ [Live Mic Recording] AudioContext.sampleRate: ${originalRate}Hz | WAV header sampleRate: 16000Hz | Duration: ${durationSec.toFixed(2)}s | Peak Amplitude: ${peakAmp.toFixed(4)} | Encoded Size: ${blob.size} bytes`);
+    if (peakAmp < 0.005) {
+      console.warn("⚠️ [Live Mic Recording] Peak amplitude is near zero (< 0.005). Check mic volume or hardware mute.");
+    }
 
     const reader = new FileReader();
-    reader.readAsDataURL(wavBlob);
+    reader.readAsDataURL(blob);
     reader.onloadend = () => {
       const base64data = (reader.result as string).split(',')[1];
       if (this.onAudio) {

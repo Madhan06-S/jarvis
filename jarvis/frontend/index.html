@@ -87,7 +87,7 @@
 
     <!-- TOP LEFT: System Stats -->
     <div id="status-tl" style="position:absolute;top:16px;left:16px;font-size:12px;color:#00BFFF;line-height:1.8;opacity:0.85;pointer-events:all;">
-      J.A.R.V.I.S. v3.0 EVOLVED<br>
+      J.A.R.V.I.S. v3.0.4-LIVE-MIC ●<br>
       SYSTEM ONLINE ●<br>
       <div style="display:flex;align-items:center;gap:4px;margin:2px 0;"><span>CPU</span><div style="flex:1;height:3px;background:rgba(0,191,255,0.2);"><div id="cpu-bar" style="height:100%;background:#00BFFF;width:0%;transition:width 0.5s;"></div></div><span id="cpu-val">0%</span></div>
       <div style="display:flex;align-items:center;gap:4px;margin:2px 0;"><span>MEM</span><div style="flex:1;height:3px;background:rgba(0,191,255,0.2);"><div id="mem-bar" style="height:100%;background:#00BFFF;width:0%;transition:width 0.5s;"></div></div><span id="mem-val">0%</span></div>
@@ -233,7 +233,7 @@ AI Core  ● Active</pre>
     <button id="mobile-mic-btn" title="Tap to Talk" style="display:none;width:56px;height:56px;border-radius:50%;background:rgba(0,191,255,0.2);border:2px solid #00BFFF;color:#00BFFF;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 0 15px rgba(0,191,255,0.5);margin-bottom:4px;">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
     </button>
-    <input id="chat-input" placeholder="// Speak or type a command, sir..." autocomplete="off" spellcheck="false" style="width:100%;background:rgba(0,50,100,0.35);border:1px solid rgba(0,191,255,0.5);color:#00BFFF;font-family:'Courier New',monospace;font-size:14px;padding:12px 20px;outline:none;letter-spacing:1px;border-radius:24px;text-align:center;backdrop-filter:blur(5px);">
+    <input id="chat-input" name="jarvis_command_query" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="// Speak or type a command, sir..." style="width:100%;background:rgba(0,50,100,0.35);border:1px solid rgba(0,191,255,0.5);color:#00BFFF;font-family:'Courier New',monospace;font-size:14px;padding:12px 20px;outline:none;letter-spacing:1px;border-radius:24px;text-align:center;backdrop-filter:blur(5px);">
     <button id="toggle-hud-btn" style="background:rgba(0,50,100,0.4);border:1px solid rgba(0,191,255,0.4);color:#00BFFF;font-family:'Orbitron',sans-serif;font-size:10px;padding:6px 16px;cursor:pointer;border-radius:12px;letter-spacing:1.5px;transition:all 0.2s;">SHOW DIAGNOSTIC HUD</button>
   </div>
 
