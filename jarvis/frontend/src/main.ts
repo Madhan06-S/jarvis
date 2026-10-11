@@ -156,6 +156,7 @@ function main() {
 
   let currentYtPlayer: any = null;
   let voiceWatchdogTimer: any = null;
+  let voiceStage = 'idle';
 
   function resetVoiceWatchdog() {
     if (voiceWatchdogTimer) {
@@ -164,15 +165,23 @@ function main() {
     }
   }
 
-  function startVoiceWatchdog() {
+  function startVoiceWatchdog(stage = 'transcribing') {
     resetVoiceWatchdog();
+    voiceStage = stage;
+    console.log(`[HUD Watchdog] Started 8s timeout guard for voice stage: '${stage}'`);
     voiceWatchdogTimer = setTimeout(() => {
-      if (state === 'transcribing' || state === 'thinking') {
-        console.warn('[HUD Watchdog] 8-second timeout reached. Returning to IDLE.');
-        appendHudLog('SPEECH_TIMEOUT', 'Voice command processing timed out after 8s.', '#ff9900');
-        errEl.innerText = 'SPEECH TIMED OUT. RETURNING TO IDLE.';
+      if (state === 'transcribing' || state === 'thinking' || state === 'listening') {
+        let reason = 'STT TRANSCRIPTION TIMEOUT (NO RESPONSE FROM BACKEND)';
+        if (voiceStage === 'listening') {
+          reason = 'NO SPEECH DETECTED (RMS TOO LOW / SILENCE)';
+        } else if (!socket.isConnected()) {
+          reason = 'VOICE WEBSOCKET DISCONNECTED (CHECK AUTHENTICATION)';
+        }
+        console.warn(`[HUD Watchdog] 8s timeout reached! Diagnostic failure: ${reason}`);
+        appendHudLog('SPEECH_TIMEOUT', reason, '#ff9900');
+        errEl.innerText = reason;
         errEl.style.opacity = '1';
-        setTimeout(() => { errEl.style.opacity = '0'; }, 4000);
+        setTimeout(() => { errEl.style.opacity = '0'; }, 5000);
         setState('idle');
       }
     }, 8000);
@@ -200,12 +209,14 @@ function main() {
     (t) => {
       if (isMuted) return;
       audio.stop();
+      console.log(`[Voice Pipeline] WebSpeech transcript received: "${t}". Sending to socket...`);
       socket.send({ type: 'transcript', text: t, isFinal: true });
       setState('thinking');
-      startVoiceWatchdog();
+      startVoiceWatchdog('thinking');
     },
     (err) => {
       if (err === 'aborted' || err === 'no-speech') return;
+      console.error(`[Voice Pipeline] Voice engine error: ${err}`);
       appendHudLog('SPEECH_ERROR', `Voice Engine: ${err.toUpperCase()}`, '#ff3300');
       errEl.innerText = err;
       errEl.style.opacity = '1';
@@ -216,20 +227,37 @@ function main() {
     (base64Wav) => {
       if (isMuted) return;
       audio.stop();
-      console.log(`[Voice Pipeline] Sending audio_input (${base64Wav.length} b64 chars). WS State: ${socket.readyState}`);
+      const isConnected = socket.isConnected();
+      console.log(`[Voice Pipeline] Encoded audio_input (${base64Wav.length} b64 chars). WS Connected: ${isConnected}`);
+      if (!isConnected) {
+        errEl.innerText = "VOICE WEBSOCKET DISCONNECTED. PLEASE CHECK AUTH TOKEN.";
+        errEl.style.opacity = '1';
+        setTimeout(() => { errEl.style.opacity = '0'; }, 5000);
+        setState('idle');
+        return;
+      }
       socket.send({ type: 'audio_input', data: base64Wav });
       setState('transcribing');
-      startVoiceWatchdog();
+      startVoiceWatchdog('audio_sent');
     },
     (st) => {
       if (isMuted) return;
       setState(st);
-      if (st === 'transcribing' || st === 'thinking') startVoiceWatchdog();
+      if (st === 'transcribing' || st === 'thinking') startVoiceWatchdog(st);
     }
   );
 
   const micContainer = document.getElementById('mic-level-container');
   const micFill = document.getElementById('mic-level-fill');
+  const micDeviceLabel = document.getElementById('mic-device-label');
+
+  voice.onDeviceChange = (deviceName) => {
+    if (micDeviceLabel) {
+      micDeviceLabel.innerText = `MIC: ${deviceName.toUpperCase()}`;
+      micDeviceLabel.style.display = 'block';
+    }
+  };
+
   voice.onMicLevel = (pct) => {
     if (micContainer && micFill) {
       micContainer.style.display = pct > 0 ? 'block' : 'none';
@@ -568,7 +596,9 @@ function main() {
     } else if (type==='audio' && msg.data) {
       setState('speaking'); audio.enqueue(msg.data as string);
     } else if (type==='transcript_result' && msg.text) {
-      appendHudLog('STT_TRANSCRIPT', `[${msg.engine || 'faster-whisper'}] "${msg.text}" (${Math.round(msg.latency_ms || 0)}ms)`, '#00ff88');
+      console.log(`[Voice Pipeline] HUD received transcript_result: "${msg.text}" (${msg.engine || 'faster-whisper'}, ${Math.round((msg.latency_ms as number) || 0)}ms)`);
+      resetVoiceWatchdog();
+      appendHudLog('STT_TRANSCRIPT', `[${msg.engine || 'faster-whisper'}] "${msg.text}" (${Math.round((msg.latency_ms as number) || 0)}ms)`, '#00ff88');
       statusEl.innerText = `"${msg.text}"`;
     } else if (type==='status' && msg.state) {
       if (msg.state==='idle' && audio.isIdle()) setState('idle');

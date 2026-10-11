@@ -1467,9 +1467,13 @@ _last_jarvis_response = ""
 async def websocket_endpoint(websocket: WebSocket):
     global _last_jarvis_response
     
+    client_host = websocket.client.host if websocket.client else "127.0.0.1"
     if not verify_ws_auth(websocket):
+        print(f"🔒 [Voice Pipeline Auth] Connection rejected from {client_host}: Invalid or missing token")
         await websocket.close(code=4001, reason="Unauthorized Token")
         return
+
+    print(f"🎙️ [Voice Pipeline Auth] Client successfully authenticated and connected from {client_host}")
 
     requested_sub = websocket.headers.get("sec-websocket-protocol", "")
     subprotocol = None
@@ -1622,7 +1626,9 @@ async def websocket_endpoint(websocket: WebSocket):
                             await websocket.send_json({"type": "status", "state": "idle"})
                             continue
                     except Exception as e:
-                        print("❌ [Voice Pipeline] STT error:", e)
+                        import traceback
+                        print(f"❌ [Voice Pipeline] STT error: {e}")
+                        traceback.print_exc()
                         await websocket.send_json({"type": "status", "state": "idle"})
                         continue
             elif msg.get("type") == "transcript" and msg.get("isFinal"):

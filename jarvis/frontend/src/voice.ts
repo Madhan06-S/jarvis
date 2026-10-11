@@ -81,6 +81,7 @@ export class VoiceInput {
   public isAwake = false;
   public onWake: (() => void) | null = null;
   public onMicLevel: ((pct: number) => void) | null = null;
+  public onDeviceChange: ((deviceName: string) => void) | null = null;
 
   // Adaptive noise calibration
   private calibrationStart: number = 0;
@@ -101,12 +102,15 @@ export class VoiceInput {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error("Microphone access is not supported in this browser environment.");
       }
+      console.log("[Voice VAD] Requesting microphone stream (echoCancellation, noiseSuppression, autoGainControl)...");
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
       });
 
       const audioTrack = this.stream.getAudioTracks()[0];
-      console.log(`[Voice VAD] Microphone granted: '${audioTrack ? audioTrack.label : 'Default Mic'}'`);
+      const deviceLabel = audioTrack ? audioTrack.label : 'Default Microphone';
+      console.log(`[Voice VAD] Microphone granted: '${deviceLabel}'`);
+      if (this.onDeviceChange) this.onDeviceChange(deviceLabel);
 
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       this.audioCtx = new AudioContextClass();
@@ -129,8 +133,8 @@ export class VoiceInput {
         }
         const rms = Math.sqrt(sum / inputData.length);
 
-        // Update live mic level meter
-        const pct = Math.min(100, Math.round(rms * 1200));
+        // Update live mic level meter with amplified scale for responsive UI feedback
+        const pct = Math.min(100, Math.round(Math.pow(Math.min(1.0, rms * 18.0), 0.65) * 100));
         if (this.onMicLevel) this.onMicLevel(pct);
 
         // Calibrate ambient noise floor during first 1.0 second
