@@ -55,12 +55,22 @@ async def run(query: str, websocket=None) -> Dict[str, Any]:
             "hud_card": {"type": "reminders", "title": "ACTIVE REMINDERS", "data": reminders_list}
         }
 
+    # Normalize words like "an hour" -> "1 hour", "a minute" -> "1 minute"
+    t = re.sub(r"\b(?:an|a|one)\s+(hour|minute|sec)", r"1 \1", t)
+
     # Set timer / reminder
-    tm_match = re.search(r"(?:set\s+)?(?:timer|reminder|alarm)\s+(?:for\s+)?(\d+)\s*(min|minute|sec|second|hour)", t)
+    tm_match = re.search(r"(?:for|in)\s+(\d+)\s*(min|minute|sec|second|hour)", t)
+    if not tm_match:
+        tm_match = re.search(r"(?:set\s+)?(?:timer|reminder|alarm)\s+(?:for\s+)?(\d+)\s*(min|minute|sec|second|hour)", t)
+
     title = "Timer"
-    rem_match = re.search(r"remind me to\s+(.+)", t)
+    rem_match = re.search(r"remind me to\s+(.+?)(?:\s+(?:in|for)\s+\d+\s*(?:min|minute|sec|second|hour)|$)", t)
     if rem_match:
         title = rem_match.group(1).strip()
+    elif "timer for" in t:
+        title_match = re.search(r"timer for \d+\s*(?:min|minute|sec|second|hour)\s*(?:for\s+(.+))?", t)
+        if title_match and title_match.group(1):
+            title = title_match.group(1).strip()
 
     num, unit = 5, "min"
     if tm_match:

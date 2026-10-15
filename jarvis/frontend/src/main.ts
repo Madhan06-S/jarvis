@@ -168,7 +168,7 @@ function main() {
   function startVoiceWatchdog(stage = 'transcribing') {
     resetVoiceWatchdog();
     voiceStage = stage;
-    console.log(`[HUD Watchdog] Started 8s timeout guard for voice stage: '${stage}'`);
+    console.log(`[HUD Watchdog] Started 12s timeout guard for voice stage: '${stage}'`);
     voiceWatchdogTimer = setTimeout(() => {
       if (state === 'transcribing' || state === 'thinking' || state === 'listening') {
         let reason = 'STT TRANSCRIPTION TIMEOUT (NO RESPONSE FROM BACKEND)';
@@ -177,14 +177,14 @@ function main() {
         } else if (!socket.isConnected()) {
           reason = 'VOICE WEBSOCKET DISCONNECTED (CHECK AUTHENTICATION)';
         }
-        console.warn(`[HUD Watchdog] 8s timeout reached! Diagnostic failure: ${reason}`);
+        console.warn(`[HUD Watchdog] 12s timeout reached! Diagnostic failure: ${reason}`);
         appendHudLog('SPEECH_TIMEOUT', reason, '#ff9900');
         errEl.innerText = reason;
         errEl.style.opacity = '1';
         setTimeout(() => { errEl.style.opacity = '0'; }, 5000);
         setState('idle');
       }
-    }, 8000);
+    }, 12000);
   }
 
   function destroyCurrentMusicPlayer() {
@@ -623,6 +623,34 @@ function main() {
         setTimeout(() => { errEl.style.opacity = '0'; }, 3500);
         setState('idle');
       }
+    } else if (type === 'chat_stream_start') {
+      resetVoiceWatchdog();
+      setState('speaking');
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.innerText = '';
+      }
+    } else if (type === 'token' && msg.token) {
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        const cur = (statusEl.innerText || '') + (msg.token as string);
+        statusEl.innerText = cur.replace(/\[TRIGGER_SKILL:[^\]]*\]?/g, '');
+      }
+    } else if (type === 'chat_stream_end') {
+      resetVoiceWatchdog();
+      if (msg.full_text) {
+        appendHudLog('JARVIS', String(msg.full_text), '#00e5ff');
+      }
+      if (statusEl && msg.full_text) {
+        statusEl.innerText = String(msg.full_text);
+        setTimeout(() => {
+          if (state === 'idle') statusEl.style.display = 'none';
+        }, 6000);
+      }
+    } else if (type === 'ai_metrics') {
+      const info = `[${msg.model}] TTFT: ${msg.time_to_first_token_ms}ms | Total: ${msg.total_time_ms}ms`;
+      console.log(`[AI Metrics] ${info}`);
+      appendHudLog('AI_BRAIN', info, '#00ff88');
     } else if (type==='status' && msg.state) {
       if (msg.state==='idle') {
         resetVoiceWatchdog();

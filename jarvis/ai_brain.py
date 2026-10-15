@@ -34,19 +34,24 @@ OPENAI_API_KEY    = os.getenv("OPENAI_API_KEY", "")
 GEMINI_API_KEY    = os.getenv("GEMINI_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
-# Explicitly clear placeholders from system environment variables
-if ANTHROPIC_API_KEY and ("your-" in ANTHROPIC_API_KEY.lower() or ANTHROPIC_API_KEY.startswith("your-")):
+def _is_placeholder_key(val: str) -> bool:
+    if not val:
+        return True
+    low = val.lower().strip()
+    return any(p in low for p in ["your-", "paste_", "your_real_key", "sk-ant-paste", "todo", "xxx"])
+
+if _is_placeholder_key(ANTHROPIC_API_KEY):
     ANTHROPIC_API_KEY = ""
-if GEMINI_API_KEY and ("your-" in GEMINI_API_KEY.lower() or GEMINI_API_KEY.startswith("your-")):
+if _is_placeholder_key(GEMINI_API_KEY):
     GEMINI_API_KEY = ""
-if OPENAI_API_KEY and ("your-" in OPENAI_API_KEY.lower() or OPENAI_API_KEY.startswith("your-")):
+if _is_placeholder_key(OPENAI_API_KEY):
     OPENAI_API_KEY = ""
 
 OPENAI_MODEL  = os.getenv("OPENAI_MODEL",  "gpt-4o")
-GEMINI_MODEL  = os.getenv("GEMINI_MODEL",  "gemini-2.0-flash")
+GEMINI_MODEL  = os.getenv("GEMINI_MODEL",  "gemini-2.5-flash")
 CLAUDE_MODEL  = os.getenv("CLAUDE_MODEL",  "claude-sonnet-4-20250514")
 
-DEFAULT_PROVIDER = os.getenv("AI_PROVIDER", "auto")  # auto | openai | gemini | claude | pollinations
+DEFAULT_PROVIDER = os.getenv("AI_PROVIDER", "auto")  # auto | claude | gemini | openai | pollinations
 
 # ─────────────────────────────────────────────
 # Continuation deduplication — kills the #1 build error
@@ -345,20 +350,20 @@ async def call_ai(system: str, user: str, max_tokens: int = 12000,
     elif provider == "pollinations":
         order = ["pollinations"]
     else:  # auto
-        if OPENAI_API_KEY:    order.append("openai")
-        if GEMINI_API_KEY:    order.append("gemini")
         if ANTHROPIC_API_KEY: order.append("claude")
+        if GEMINI_API_KEY:    order.append("gemini")
+        if OPENAI_API_KEY:    order.append("openai")
         order.append("pollinations")
 
     last_err = None
     for p in order:
         try:
-            if p == "openai":
-                return await _call_openai(system, user, max_tokens)
+            if p == "claude":
+                return await _call_claude(system, user, max_tokens)
             elif p == "gemini":
                 return await _call_gemini(system, user, max_tokens)
-            elif p == "claude":
-                return await _call_claude(system, user, max_tokens)
+            elif p == "openai":
+                return await _call_openai(system, user, max_tokens)
             elif p == "pollinations":
                 return await _call_pollinations(system, user, max_tokens)
         except Exception as e:
@@ -369,14 +374,26 @@ async def call_ai(system: str, user: str, max_tokens: int = 12000,
     raise RuntimeError(f"All AI providers failed. Last error: {last_err}")
 
 
-async def stream_ai(system: str, user: str, max_tokens: int = 4000):
+async def stream_ai_conversation(system: str, messages: list, max_tokens: int = 1500):
     """
-    Async generator yielding text chunks as they arrive from the active LLM.
-    Supports Anthropic, Gemini, OpenAI, and Pollinations streaming.
+    Async generator yielding (token_str, model_name) with prioritized fallback:
+    Claude -> Gemini -> Pollinations.
+    Maintains full conversation context.
     """
+    # 1. Primary: Anthropic Claude
     if ANTHROPIC_API_KEY:
+        claude_name = f"Claude ({CLAUDE_MODEL})"
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            formatted_msgs = []
+            for m in messages:
+                role = "assistant" if m.get("role") in ["assistant", "jarvis"] else "user"
+                content = m.get("content") or m.get("text") or ""
+                if content:
+                    formatted_msgs.append({"role": role, "content": content})
+            if not formatted_msgs:
+                formatted_msgs = [{"role": "user", "content": "Hello"}]
+
+            async with httpx.AsyncClient(timeout=45.0) as client:
                 async with client.stream(
                     "POST",
                     "https://api.anthropic.com/v1/messages",
@@ -389,34 +406,124 @@ async def stream_ai(system: str, user: str, max_tokens: int = 4000):
                         "model": CLAUDE_MODEL,
                         "max_tokens": max_tokens,
                         "system": system,
-                        "messages": [{"role": "user", "content": user}],
+                        "messages": formatted_msgs,
                         "stream": True
                     }
                 ) as response:
-                    async for line in response.aiter_lines():
-                        if line.startswith("data: "):
-                            data_str = line[6:].strip()
-                            if data_str == "[DONE]":
-                                break
-                            try:
-                                payload = json.loads(data_str)
-                                if payload.get("type") == "content_block_delta":
-                                    text_chunk = payload.get("delta", {}).get("text", "")
-                                    if text_chunk:
-                                        yield text_chunk
-                            except Exception:
-                                pass
-            return
+                    if response.status_code == 200:
+                        yielded_any = False
+                        async for line in response.aiter_lines():
+                            if line.startswith("data: "):
+                                data_str = line[6:].strip()
+                                if data_str == "[DONE]":
+                                    break
+                                try:
+                                    payload = json.loads(data_str)
+                                    if payload.get("type") == "content_block_delta":
+                                        chunk = payload.get("delta", {}).get("text", "")
+                                        if chunk:
+                                            yielded_any = True
+                                            yield (chunk, claude_name)
+                                except Exception:
+                                    pass
+                        if yielded_any:
+                            return
+                    else:
+                        print(f"[AI Brain Stream] Claude returned HTTP {response.status_code}, falling back to Gemini...")
         except Exception as err:
-            print(f"[AI Brain Stream] Claude stream failed: {err}, falling back to call_ai")
+            print(f"[AI Brain Stream] Claude stream failed: {err}. Falling back to Gemini...")
 
-    # Fallback to standard response with chunked yield
-    full_text = await call_ai(system, user, max_tokens)
-    words = full_text.split(" ")
-    for i in range(0, len(words), 3):
-        chunk = " ".join(words[i:i+3]) + (" " if i+3 < len(words) else "")
+    # 2. Secondary: Google Gemini
+    if GEMINI_API_KEY:
+        gemini_name = f"Gemini ({GEMINI_MODEL})"
+        try:
+            gemini_contents = []
+            for m in messages:
+                role = "user" if m.get("role") == "user" else "model"
+                text = (m.get("content") or m.get("text") or "").strip()
+                if not text:
+                    continue
+                if gemini_contents and gemini_contents[-1]["role"] == role:
+                    gemini_contents[-1]["parts"][0]["text"] += "\n" + text
+                else:
+                    gemini_contents.append({"role": role, "parts": [{"text": text}]})
+            if not gemini_contents or gemini_contents[0]["role"] != "user":
+                gemini_contents.insert(0, {"role": "user", "parts": [{"text": "Hello"}]})
+
+            payload = {
+                "contents": gemini_contents,
+                "systemInstruction": {"parts": [{"text": system}]},
+                "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.7}
+            }
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:streamGenerateContent?alt=sse&key={GEMINI_API_KEY}"
+
+            async with httpx.AsyncClient(timeout=45.0) as client:
+                async with client.stream("POST", url, json=payload) as response:
+                    if response.status_code == 200:
+                        yielded_any = False
+                        async for line in response.aiter_lines():
+                            if line.startswith("data: "):
+                                try:
+                                    d = json.loads(line[6:].strip())
+                                    candidates = d.get("candidates", [])
+                                    if candidates:
+                                        parts = candidates[0].get("content", {}).get("parts", [])
+                                        for p in parts:
+                                            txt = p.get("text", "")
+                                            if txt:
+                                                yielded_any = True
+                                                yield (txt, gemini_name)
+                                except Exception:
+                                    pass
+                        if yielded_any:
+                            return
+                    else:
+                        print(f"[AI Brain Stream] Gemini returned HTTP {response.status_code}, falling back to Pollinations...")
+        except Exception as err:
+            print(f"[AI Brain Stream] Gemini stream failed: {err}. Falling back to Pollinations...")
+
+    # 3. Tertiary: Pollinations (free fallback)
+    poll_name = "Pollinations (free)"
+    try:
+        poll_msgs = [{"role": "system", "content": system}]
+        for m in messages:
+            role = "assistant" if m.get("role") in ["assistant", "jarvis"] else "user"
+            content = m.get("content") or m.get("text") or ""
+            if content:
+                poll_msgs.append({"role": role, "content": content})
+
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            res = await client.post(
+                "https://text.pollinations.ai/",
+                json={"messages": poll_msgs, "model": "openai", "seed": 42}
+            )
+            res.raise_for_status()
+            text = res.text.strip()
+            if text.startswith("{") and text.endswith("}"):
+                try:
+                    data = json.loads(text)
+                    if "choices" in data:
+                        text = data["choices"][0]["message"]["content"]
+                    elif "content" in data:
+                        text = data["content"]
+                except Exception:
+                    pass
+
+        words = text.split(" ")
+        for i in range(0, len(words), 2):
+            chunk = " ".join(words[i:i+2]) + (" " if i+2 < len(words) else "")
+            yield (chunk, poll_name)
+            await asyncio.sleep(0.01)
+        return
+    except Exception as err:
+        print(f"[AI Brain Stream] Pollinations fallback error: {err}")
+        yield ("I apologize, sir, but my cognitive neural pathways are temporarily unresponsive.", "System Error")
+
+
+async def stream_ai(system: str, user: str, max_tokens: int = 4000):
+    """Legacy compatibility generator yielding string tokens."""
+    async for chunk, _ in stream_ai_conversation(system, [{"role": "user", "content": user}], max_tokens):
         yield chunk
-        await asyncio.sleep(0.01)
 
 
 async def call_ai_json(system: str, user: str) -> dict:

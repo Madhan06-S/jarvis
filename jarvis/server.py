@@ -1459,11 +1459,55 @@ def log_usage(input_tokens, output_tokens, action_type="api"):
     with open("data/usage_log.jsonl", "a") as f:
         f.write(json.dumps(entry) + "\n")
 
-# ─────────────────────────────────────────────
-# WebSocket Endpoint
-# ─────────────────────────────────────────────
 _history: List[dict] = []
 _last_jarvis_response = ""
+
+# ─────────────────────────────────────────────
+# Short-Term Conversation Memory (last 10 turns)
+# ─────────────────────────────────────────────
+_short_term_conversation: List[dict] = []
+
+def record_conversation_turn(user_msg: str, assistant_msg: str):
+    global _short_term_conversation
+    if not user_msg or not assistant_msg:
+        return
+    _short_term_conversation.append({"role": "user", "content": user_msg.strip()})
+    _short_term_conversation.append({"role": "assistant", "content": assistant_msg.strip()})
+    if len(_short_term_conversation) > 20:
+        _short_term_conversation[:] = _short_term_conversation[-20:]
+
+def build_jarvis_system_prompt() -> str:
+    manifest = intent_router.get_all_skills_manifest()
+    skills_doc = []
+    for s in manifest:
+        trigs = ", ".join(s.get("triggers", [])[:8])
+        skills_doc.append(f"- {s['name']}: {s.get('description', '')}. Triggers: {trigs}")
+    skills_str = "\n".join(skills_doc)
+
+    return f"""You are J.A.R.V.I.S., Tony Stark's personal artificial intelligence system.
+CRITICAL RULES OF ENGAGEMENT:
+1. Form of Address: You MUST address the user as "sir" in EVERY response (e.g., "Certainly, sir.", "Right away, sir.").
+2. Persona & Tone: Calm, poised, articulate, with subtle British wit and dry humor. Never rambling or robotic.
+3. Length: Keep conversational responses strictly under 3 sentences unless the user explicitly requests more detail, in-depth elaboration, or code.
+4. Onboard System Skills: You have direct control over the following skills:
+{skills_str}
+
+5. Skill Triggering Directive:
+If the user's request clearly maps to an available skill (e.g. reminders, alarms, timers, weather forecast, playing/controlling music, notes, todo list, checking system stats, launching apps, daily briefing), you MUST trigger that skill with parsed arguments rather than just chatting about it.
+To trigger a skill, format the VERY FIRST line of your response as:
+[TRIGGER_SKILL: <normalized_command_with_parsed_args>]
+Follow immediately with a brief spoken confirmation addressing the user as sir.
+Examples:
+- "remind me to call mom in an hour" -> [TRIGGER_SKILL: set timer for 60 min for call mom] Setting a reminder for an hour from now, sir.
+- "set a timer for 10 minutes for pasta" -> [TRIGGER_SKILL: set timer for 10 min for pasta] Countdown initiated, sir.
+- "play some coldplay" -> [TRIGGER_SKILL: play coldplay] Queuing Coldplay on the sound system, sir.
+- "what is the weather like in New York" -> [TRIGGER_SKILL: weather in New York] Checking meteorological data for New York, sir.
+- "add todo review contracts" -> [TRIGGER_SKILL: add todo review contracts] Added to your agenda, sir.
+- "how is my battery" -> [TRIGGER_SKILL: battery] Checking power cells, sir.
+- "open terminal" -> [TRIGGER_SKILL: open terminal] Opening terminal window, sir.
+
+If the user query is conversational, follow-up ("and tomorrow?", "why is that?"), philosophy, general facts, or coding, answer directly in character as JARVIS, always addressing me as sir.
+"""
 
 @app.websocket("/ws")
 @app.websocket("/ws/voice")
@@ -1725,6 +1769,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 _history.append({"from": "user",   "text": user_text})
                 _history.append({"from": "jarvis", "text": spoken_resp})
                 _last_jarvis_response = spoken_resp
+                record_conversation_turn(user_text, spoken_resp)
 
                 # Print timing latency breakdown
                 ws_delay = max(0.0, (t_server_recv - t_ws_send) * 1000)
@@ -1744,57 +1789,133 @@ async def websocket_endpoint(websocket: WebSocket):
                 except Exception:
                     pass
                 continue
-                continue
 
             # ─────────────────────────────────────────────
-            # 2. STREAMING LLM ROUTE (Gemini / Claude / Pollinations)
+            # 2. STREAMING LLM CONVERSATIONAL FALLBACK
             # ─────────────────────────────────────────────
+            t_start_llm = time.time()
             await websocket.send_json({"type": "status", "state": "thinking"})
             
             t_first_token = None
             t_tts_start = None
             full_response = ""
             sentence_buffer = ""
+            model_used = "AI Brain"
+            first_token_received = asyncio.Event()
 
-            SYSTEM_PROMPT = "You are JARVIS, an ultra-intelligent, concise, and helpful AI assistant. Respond directly and efficiently."
+            # 4. Spoken "one moment, sir" ONLY if AI takes >2s to start responding
+            async def delay_greeting_watcher():
+                try:
+                    await asyncio.sleep(2.0)
+                    if not first_token_received.is_set():
+                        print("⏳ [AI Fallback] Response took >2s. Speaking 'One moment, sir.'")
+                        await websocket.send_json({"type": "browser_speak_chunk", "text": "One moment, sir."})
+                        await websocket.send_json({"type": "token", "token": "One moment, sir... "})
+                except asyncio.CancelledError:
+                    pass
 
-            async for token in ai_brain.stream_ai(SYSTEM_PROMPT, user_text):
-                if t_first_token is None:
-                    t_first_token = time.time()
+            greeting_task = asyncio.create_task(delay_greeting_watcher())
 
-                full_response += token
-                sentence_buffer += token
+            system_prompt = build_jarvis_system_prompt()
+            # 1. Short-term conversation memory (last 10 turns = up to 20 messages)
+            conversation_msgs = list(_short_term_conversation) + [{"role": "user", "content": user_text}]
 
-                # Send streaming token to UI
-                await websocket.send_json({"type": "token", "token": token})
+            try:
+                await websocket.send_json({"type": "chat_stream_start"})
 
-                # Sentence-by-Sentence TTS Trigger
-                sentences = re.split(r'(?<=[.!?\n])\s+', sentence_buffer)
-                if len(sentences) > 1:
-                    completed_sentence = sentences[0].strip()
-                    sentence_buffer = " ".join(sentences[1:])
+                async for token, m_name in ai_brain.stream_ai_conversation(system_prompt, conversation_msgs):
+                    if t_first_token is None:
+                        t_first_token = time.time()
+                        first_token_received.set()
+                        greeting_task.cancel()
+                        model_used = m_name
 
-                    clean_sentence = _ACTION_STRIP.sub("", completed_sentence).strip()
-                    clean_sentence = re.sub(r"[*_`\\#]", "", clean_sentence)
+                    full_response += token
+                    sentence_buffer += token
 
-                    if clean_sentence and len(clean_sentence) > 3:
-                        if t_tts_start is None:
-                            t_tts_start = time.time()
-                            await websocket.send_json({"type": "status", "state": "speaking"})
+                    # Send streaming token to UI
+                    await websocket.send_json({"type": "token", "token": token})
 
-                        await websocket.send_json({"type": "browser_speak_chunk", "text": clean_sentence})
+                    # Sentence-by-Sentence TTS Trigger
+                    sentences = re.split(r'(?<=[.!?\n])\s+', sentence_buffer)
+                    if len(sentences) > 1:
+                        completed_sentence = sentences[0].strip()
+                        sentence_buffer = " ".join(sentences[1:])
+
+                        clean_sentence = re.sub(r"\[TRIGGER_SKILL:[^\]]+\]", "", completed_sentence)
+                        clean_sentence = _ACTION_STRIP.sub("", clean_sentence).strip()
+                        clean_sentence = re.sub(r"[*_`\\#]", "", clean_sentence)
+
+                        if clean_sentence and len(clean_sentence) > 3:
+                            if t_tts_start is None:
+                                t_tts_start = time.time()
+                                await websocket.send_json({"type": "status", "state": "speaking"})
+
+                            await websocket.send_json({"type": "browser_speak_chunk", "text": clean_sentence})
+
+            finally:
+                greeting_task.cancel()
 
             t_llm_done = time.time()
 
             # Flush remaining sentence buffer
             if sentence_buffer.strip():
-                clean_sentence = _ACTION_STRIP.sub("", sentence_buffer).strip()
+                clean_sentence = re.sub(r"\[TRIGGER_SKILL:[^\]]+\]", "", sentence_buffer)
+                clean_sentence = _ACTION_STRIP.sub("", clean_sentence).strip()
                 clean_sentence = re.sub(r"[*_`\\#]", "", clean_sentence)
-                if clean_sentence:
+                if clean_sentence and len(clean_sentence) > 2:
                     if t_tts_start is None:
                         t_tts_start = time.time()
                         await websocket.send_json({"type": "status", "state": "speaking"})
                     await websocket.send_json({"type": "browser_speak_chunk", "text": clean_sentence})
+
+            # 5. Log model used and time to first token for each answer
+            ttft_ms = ((t_first_token or t_llm_done) - t_start_llm) * 1000.0
+            total_time_ms = (t_llm_done - t_start_llm) * 1000.0
+            print(f"""
+🧠 [AI CONVERSATION FALLBACK]
+   ├── Query:               "{user_text}"
+   ├── Model Used:          {model_used}
+   ├── Time to First Token: {ttft_ms:.1f} ms
+   ├── Total Response Time: {total_time_ms:.1f} ms
+   └── Turns in Memory:     {len(_short_term_conversation) // 2}
+""")
+
+            await websocket.send_json({
+                "type": "ai_metrics",
+                "model": model_used,
+                "time_to_first_token_ms": round(ttft_ms, 1),
+                "total_time_ms": round(total_time_ms, 1)
+            })
+
+            # 3. AI Skill Triggering
+            skill_match = re.search(r"\[TRIGGER_SKILL:\s*([^\]]+)\]", full_response)
+            if skill_match:
+                raw_skill_cmd = skill_match.group(1).strip()
+                print(f"⚡ [AI Skill Trigger] Routing extracted skill command: '{raw_skill_cmd}'")
+                skill_fast_route = await intent_router.route_intent_fast(raw_skill_cmd, websocket)
+                if skill_fast_route and skill_fast_route.get("is_fast"):
+                    skill_spoken = skill_fast_route.get("spoken_response", "")
+                    skill_hud_card = skill_fast_route.get("hud_card")
+                    skill_act = skill_fast_route.get("action")
+
+                    if skill_hud_card:
+                        await websocket.send_json({"type": "hud_card", "card": skill_hud_card})
+                    if skill_spoken:
+                        await websocket.send_json({"type": "browser_speak_chunk", "text": skill_spoken})
+                    if skill_act:
+                        asyncio.create_task(actions.execute_action(skill_act, [], websocket))
+
+            # Clean display text for HUD and memory
+            clean_display_text = re.sub(r"\[TRIGGER_SKILL:[^\]]+\]", "", full_response)
+            clean_display_text = _ACTION_STRIP.sub("", clean_display_text).strip()
+            clean_display_text = re.sub(r"[*_`\\#]", "", clean_display_text)
+            _last_jarvis_response = clean_display_text
+
+            await websocket.send_json({"type": "chat_stream_end", "full_text": clean_display_text})
+
+            # 1. Save turn to conversation memory (last 10 turns)
+            record_conversation_turn(user_text, clean_display_text)
 
             # Check for embedded action tags
             action_to_exec = None
@@ -1804,10 +1925,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 tag    = groups[0] or groups[3]
                 target = (groups[1] or groups[2] or groups[4] or "").strip()
                 action_to_exec = {"action": tag, "target": target}
-
-            clean_text = _ACTION_STRIP.sub("", full_response).strip()
-            clean_text = re.sub(r"[*_`\\#]", "", clean_text)
-            _last_jarvis_response = clean_text
 
             if action_to_exec:
                 tag = action_to_exec["action"]
@@ -1821,25 +1938,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 _history[:] = _history[-60:]
 
             asyncio.create_task(memory.extract_memories(user_text, full_response))
-
-            # Log latency metrics for LLM route
-            ws_delay = max(0.0, (t_server_recv - t_ws_send) * 1000)
-            router_delay = max(0.0, (t_intent - t_server_recv) * 1000)
-            first_token_delay = max(0.0, ((t_first_token or t_llm_done) - t_intent) * 1000)
-            llm_delay = max(0.0, (t_llm_done - t_intent) * 1000)
-            tts_delay = max(0.0, ((t_tts_start or time.time()) - t_server_recv) * 1000)
-            total_delay = max(0.0, (time.time() - t_server_recv) * 1000)
-
-            print(f"""
-⏱️  [LATENCY BREAKDOWN] Command: "{user_text}"
-    ├── Route Path:        LLM_STREAM ({ai_brain.get_active_provider()})
-    ├── WS Transit Delay:  {ws_delay:.1f} ms
-    ├── Intent Routing:    {router_delay:.1f} ms
-    ├── First Token Delay: {first_token_delay:.1f} ms
-    ├── LLM Stream Total:  {llm_delay:.1f} ms
-    ├── First TTS Start:   {tts_delay:.1f} ms
-    └── Total Turnaround:  {total_delay:.1f} ms
-""")
 
             await websocket.send_json({"type": "status", "state": "idle"})
 

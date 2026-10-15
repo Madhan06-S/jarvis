@@ -176,6 +176,19 @@ export class VoiceInput {
 
         const effectiveThreshold = this.adaptiveThreshold;
 
+        const commitRecordedAudio = () => {
+          this.recording = false;
+          this.silenceStart = null;
+          const chunks = [...this.audioChunks];
+          this.audioChunks = [];
+          if (chunks.length === 0) {
+            if (this.onStateChange) this.onStateChange('idle');
+            return;
+          }
+          if (this.onStateChange) this.onStateChange('transcribing');
+          this.processAndSendAudio(chunks);
+        };
+
         // VAD Logic
         if (rms > effectiveThreshold) {
           if (!this.recording) {
@@ -197,10 +210,7 @@ export class VoiceInput {
               this.silenceStart = Date.now();
             } else if (Date.now() - this.silenceStart > silenceDuration) {
               console.log(`[Voice VAD] Speech END detected after silence (${silenceDuration}ms).`);
-              this.recording = false;
-              this.silenceStart = null;
-              if (this.onStateChange) this.onStateChange('transcribing');
-              this.processAndSendAudio();
+              commitRecordedAudio();
             }
           }
         }
@@ -208,10 +218,7 @@ export class VoiceInput {
         // Max 10s recording cap guard
         if (this.recording && this.recordStart && (Date.now() - this.recordStart > maxRecordDuration)) {
           console.warn(`[Voice VAD] Maximum recording cap reached (${maxRecordDuration}ms). Forcing audio commit.`);
-          this.recording = false;
-          this.silenceStart = null;
-          if (this.onStateChange) this.onStateChange('transcribing');
-          this.processAndSendAudio();
+          commitRecordedAudio();
         }
 
         if (this.recording) {
@@ -231,11 +238,14 @@ export class VoiceInput {
     }
   }
 
-  private async processAndSendAudio() {
-    if (this.audioChunks.length === 0 || !this.audioCtx) return;
+  private async processAndSendAudio(chunks: Float32Array[]) {
+    if (!chunks || chunks.length === 0 || !this.audioCtx) {
+      if (this.onStateChange) this.onStateChange('idle');
+      return;
+    }
 
     const sampleRate = this.audioCtx.sampleRate;
-    const merged = mergeBuffers(this.audioChunks, sampleRate);
+    const merged = mergeBuffers(chunks, sampleRate);
     const { blob, peakAmp, durationSec, originalRate } = bufferTo16kWav(merged);
 
     console.log(`🎙️ [Live Mic Recording] AudioContext.sampleRate: ${originalRate}Hz | WAV header sampleRate: 16000Hz | Duration: ${durationSec.toFixed(2)}s | Peak Amplitude: ${peakAmp.toFixed(4)} | Encoded Size: ${blob.size} bytes`);
@@ -246,13 +256,14 @@ export class VoiceInput {
     const reader = new FileReader();
     reader.readAsDataURL(blob);
     reader.onloadend = () => {
-      const base64data = (reader.result as string).split(',')[1];
-      if (this.onAudio) {
+      const resultStr = reader.result as string;
+      const base64data = resultStr ? resultStr.split(',')[1] : '';
+      if (base64data && this.onAudio) {
         this.onAudio(base64data);
+      } else {
+        if (this.onStateChange) this.onStateChange('idle');
       }
     };
-
-    this.audioChunks = [];
   }
 
   resetWakeState() {
@@ -269,7 +280,6 @@ export class VoiceInput {
   pause() {
     this.shouldListen = false;
     this.recording = false;
-    this.audioChunks = [];
   }
 }
 
