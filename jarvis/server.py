@@ -11,14 +11,21 @@ import subprocess
 import urllib.parse
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, AsyncIterator
 
 import httpx
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse, HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+
+from helpers.net_guard import (
+    is_blocked_ip, vet_target_url, open_remote_stream, ProxyError,
+    MAX_IMG_BYTES, MAX_MEDIA_BYTES, MAX_PAGE_BYTES,
+    IMG_TIMEOUT_S, MEDIA_TIMEOUT_S, PAGE_TIMEOUT_S
+)
+from helpers.page_renderer import render_live_page, render_reader_page
 
 # ─────────────────────────────────────────────
 # .env loader
@@ -322,14 +329,20 @@ async def auth_and_rate_limit_middleware(request: Request, call_next):
     path = request.url.path
     client_ip = request.client.host if request.client else "127.0.0.1"
 
-    if path.startswith("/api/"):
+    is_proxy_path = path.startswith("/api/proxy/") or path in ("/img", "/media", "/page")
+
+    if path.startswith("/api/") or path in ("/img", "/media", "/page"):
         auth_header = request.headers.get("Authorization", "")
         custom_header = request.headers.get("X-Jarvis-Token", "")
+        query_token = request.query_params.get("token", "")
         provided_token = ""
+
         if auth_header.startswith("Bearer "):
             provided_token = auth_header[7:].strip()
         elif custom_header:
             provided_token = custom_header.strip()
+        elif query_token and is_proxy_path:
+            provided_token = query_token.strip()
 
         if provided_token and secrets.compare_digest(provided_token, JARVIS_AUTH_TOKEN):
             _failed_auth_attempts.pop(client_ip, None)
@@ -2634,6 +2647,243 @@ def save_prefs(data: dict):
     if "tts_provider" in data:
         TTS_PROVIDER = data["tts_provider"]
     return {"status": "ok"}
+
+# ─────────────────────────────────────────────
+# SSRF-Guarded Media & Page Proxy Endpoints
+# ─────────────────────────────────────────────
+
+IMAGE_MIME_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".bmp": "image/bmp",
+    ".ico": "image/x-icon",
+}
+
+ALLOWED_FILE_ROOTS = [
+    os.path.realpath(os.getcwd()),
+    os.path.realpath(os.path.expanduser("~")),
+]
+
+@app.get("/api/proxy/img")
+@app.get("/img")
+async def proxy_image_endpoint(
+    request: Request,
+    url: Optional[str] = None,
+    path: Optional[str] = None,
+    token: Optional[str] = None
+):
+    """
+    SSRF-guarded proxy for remote images or vetted local images.
+    """
+    if path:
+        if not os.path.isabs(path):
+            raise HTTPException(status_code=400, detail="Absolute path required")
+        try:
+            real_path = os.path.realpath(path)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid path")
+
+        if not os.path.exists(real_path) or not os.path.isfile(real_path):
+            raise HTTPException(status_code=404, detail="File not found")
+
+        if not any(real_path.startswith(r) for r in ALLOWED_FILE_ROOTS):
+            raise HTTPException(status_code=403, detail="Path outside allowed workspace/home root")
+
+        ext = os.path.splitext(real_path)[1].lower()
+        if ext not in IMAGE_MIME_TYPES:
+            raise HTTPException(status_code=400, detail="Images only (SVG and non-images blocked)")
+
+        if os.path.getsize(real_path) > MAX_IMG_BYTES:
+            raise HTTPException(status_code=413, detail="File too large (max 15MB)")
+
+        return FileResponse(
+            real_path,
+            media_type=IMAGE_MIME_TYPES[ext],
+            headers={
+                "Cache-Control": "private, max-age=600",
+                "X-Content-Type-Options": "nosniff"
+            }
+        )
+
+    if not url:
+        raise HTTPException(status_code=400, detail="url or path query parameter required")
+
+    try:
+        resp, client = await open_remote_stream(
+            url,
+            headers={"Accept": "image/*,*/*;q=0.8"},
+            timeout_s=IMG_TIMEOUT_S
+        )
+    except ProxyError as pe:
+        raise HTTPException(status_code=pe.status, detail=pe.message)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Proxy failed: {e}")
+
+    content_type = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+    if not content_type.startswith("image/") or "svg" in content_type:
+        await resp.aclose()
+        await client.aclose()
+        raise HTTPException(status_code=415, detail=f"Not a raster image (got {content_type})")
+
+    content_length = resp.headers.get("content-length")
+    if content_length and int(content_length) > MAX_IMG_BYTES:
+        await resp.aclose()
+        await client.aclose()
+        raise HTTPException(status_code=413, detail="Image too large (max 15MB)")
+
+    async def stream_image() -> AsyncIterator[bytes]:
+        bytes_sent = 0
+        try:
+            async for chunk in resp.aiter_bytes():
+                bytes_sent += len(chunk)
+                if bytes_sent > MAX_IMG_BYTES:
+                    break
+                yield chunk
+        finally:
+            await resp.aclose()
+            await client.aclose()
+
+    headers = {
+        "Cache-Control": "private, max-age=600",
+        "X-Content-Type-Options": "nosniff"
+    }
+    if content_length:
+        headers["Content-Length"] = content_length
+
+    return StreamingResponse(stream_image(), media_type=content_type, headers=headers)
+
+@app.get("/api/proxy/media")
+@app.get("/media")
+async def proxy_media_endpoint(
+    request: Request,
+    url: str,
+    token: Optional[str] = None
+):
+    """
+    SSRF-guarded proxy for video and audio streaming, supporting HTTP Range requests.
+    """
+    if not url:
+        raise HTTPException(status_code=400, detail="url query parameter required")
+
+    req_headers = {"Accept": "*/*"}
+    if "range" in request.headers:
+        req_headers["Range"] = request.headers["range"]
+
+    try:
+        resp, client = await open_remote_stream(
+            url,
+            headers=req_headers,
+            timeout_s=MEDIA_TIMEOUT_S
+        )
+    except ProxyError as pe:
+        raise HTTPException(status_code=pe.status, detail=pe.message)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Proxy failed: {e}")
+
+    content_type = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+    if not (content_type.startswith("video/") or content_type.startswith("audio/")):
+        await resp.aclose()
+        await client.aclose()
+        raise HTTPException(status_code=415, detail=f"Not video or audio (got {content_type})")
+
+    content_length = resp.headers.get("content-length")
+    if content_length and int(content_length) > MAX_MEDIA_BYTES:
+        await resp.aclose()
+        await client.aclose()
+        raise HTTPException(status_code=413, detail="Media too large (max 200MB)")
+
+    async def stream_media() -> AsyncIterator[bytes]:
+        bytes_sent = 0
+        try:
+            async for chunk in resp.aiter_bytes():
+                bytes_sent += len(chunk)
+                if bytes_sent > MAX_MEDIA_BYTES:
+                    break
+                yield chunk
+        finally:
+            await resp.aclose()
+            await client.aclose()
+
+    out_headers = {
+        "Cache-Control": "private, max-age=600",
+        "X-Content-Type-Options": "nosniff"
+    }
+    if "accept-ranges" in resp.headers:
+        out_headers["Accept-Ranges"] = resp.headers["accept-ranges"]
+    if "content-range" in resp.headers:
+        out_headers["Content-Range"] = resp.headers["content-range"]
+    if content_length:
+        out_headers["Content-Length"] = content_length
+
+    status_code = resp.status_code if resp.status_code in (200, 206) else 200
+    return StreamingResponse(stream_media(), status_code=status_code, media_type=content_type, headers=out_headers)
+
+@app.get("/api/proxy/page")
+@app.get("/page")
+async def proxy_page_endpoint(
+    request: Request,
+    url: str,
+    mode: str = "reader",
+    token: Optional[str] = None
+):
+    """
+    SSRF-guarded proxy for HTML pages rendered into sanitized reader or live mode.
+    """
+    if not url:
+        raise HTTPException(status_code=400, detail="url query parameter required")
+
+    try:
+        resp, client = await open_remote_stream(
+            url,
+            headers={"Accept": "text/html,application/xhtml+xml,*/*;q=0.8"},
+            timeout_s=PAGE_TIMEOUT_S
+        )
+    except ProxyError as pe:
+        raise HTTPException(status_code=pe.status, detail=pe.message)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Proxy failed: {e}")
+
+    try:
+        raw_chunks = []
+        total_size = 0
+        async for chunk in resp.aiter_bytes():
+            total_size += len(chunk)
+            if total_size > MAX_PAGE_BYTES:
+                raise HTTPException(status_code=413, detail="Page too large (max 8MB)")
+            raw_chunks.append(chunk)
+        raw_bytes = b"".join(raw_chunks)
+    finally:
+        await resp.aclose()
+        await client.aclose()
+
+    content_type_header = resp.headers.get("content-type") or ""
+    charset = "utf-8"
+    c_match = re.search(r"charset=([\w-]+)", content_type_header, re.IGNORECASE)
+    if c_match:
+        charset = c_match.group(1).lower()
+    else:
+        meta_match = re.search(rb'<meta[^>]+charset=["\']?([\w-]+)', raw_bytes[:4096], re.IGNORECASE)
+        if meta_match:
+            try:
+                charset = meta_match.group(1).decode("ascii").lower()
+            except Exception:
+                pass
+
+    try:
+        html_text = raw_bytes.decode(charset, errors="replace")
+    except Exception:
+        html_text = raw_bytes.decode("utf-8", errors="replace")
+
+    auth_tok = token or JARVIS_AUTH_TOKEN
+    if mode == "live":
+        body, headers = render_live_page(html_text, url)
+    else:
+        body, headers = render_reader_page(html_text, url, token=auth_tok)
+
+    return HTMLResponse(content=body, status_code=200, headers=headers)
 
 @app.get("/api/skills")
 def get_skills():

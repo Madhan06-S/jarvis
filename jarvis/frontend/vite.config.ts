@@ -15,6 +15,18 @@ export default defineConfig({
         target: "http://127.0.0.1:8340",
         secure: false,
       },
+      "/img": {
+        target: "http://127.0.0.1:8340",
+        secure: false,
+      },
+      "/media": {
+        target: "http://127.0.0.1:8340",
+        secure: false,
+      },
+      "/page": {
+        target: "http://127.0.0.1:8340",
+        secure: false,
+      },
     },
   },
   build: {
