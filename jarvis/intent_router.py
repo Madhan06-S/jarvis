@@ -56,6 +56,18 @@ def get_all_skills_manifest() -> List[Dict[str, Any]]:
     """Returns list of registered skills for HUD manifest rendering."""
     return SKILLS_MANIFEST
 
+def identify_skill_for_command(query: str) -> Optional[str]:
+    """Identifies which skill module matches the command without executing it."""
+    t = query.lower().strip()
+    if t in ["/skills", "skills", "list skills", "what can you do", "show skills"]:
+        return "Skills Manifest"
+    for skill in SKILLS:
+        triggers = getattr(skill, "TRIGGERS", [])
+        for trig in triggers:
+            if re.search(r"\b" + re.escape(trig) + r"\b", t):
+                return getattr(skill, "NAME", "Unknown")
+    return None
+
 async def route_intent_fast(user_text: str, websocket=None) -> Optional[Dict[str, Any]]:
     """
     Evaluates query against loaded skills.

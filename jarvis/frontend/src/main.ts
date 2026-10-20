@@ -648,9 +648,26 @@ function main() {
         }, 6000);
       }
     } else if (type === 'ai_metrics') {
-      const info = `[${msg.model}] TTFT: ${msg.time_to_first_token_ms}ms | Total: ${msg.total_time_ms}ms`;
+      const reasonStr = msg.fallback_reason ? ` | ${msg.fallback_reason}` : '';
+      const info = `[${msg.model}] TTFT: ${msg.time_to_first_token_ms}ms | Total: ${msg.total_time_ms}ms${reasonStr}`;
       console.log(`[AI Metrics] ${info}`);
       appendHudLog('AI_BRAIN', info, '#00ff88');
+
+      // Update HUD active model badge in Stark Diagnostics
+      const perfModelEl = document.getElementById('perf-model-val');
+      if (perfModelEl && msg.model) {
+        const shortModel = String(msg.model).split('(')[0].trim().toUpperCase() + ' FLASH';
+        perfModelEl.innerText = shortModel;
+        perfModelEl.title = `Active Model: ${msg.model}\nRouting Note: ${msg.fallback_reason || 'Primary active'}`;
+      }
+    } else if (type === 'confirmation_result') {
+      const cardContainer = document.getElementById('hud-card-container');
+      if (cardContainer) cardContainer.style.display = 'none';
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.innerText = msg.status === 'confirmed' ? '✓ Action Confirmed & Executing' : '✕ Action Cancelled';
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 3500);
     } else if (type==='status' && msg.state) {
       if (msg.state==='idle') {
         resetVoiceWatchdog();
@@ -701,6 +718,52 @@ function main() {
     } else if (type === 'hud_card' && msg.card) {
       const card = msg.card as any;
       const cardContainer = document.getElementById('hud-card-container');
+
+      if (card.type === 'confirmation') {
+        if (cardContainer) {
+          const d = card.data || {};
+          const confId = card.id || d.id;
+          const targetCmd = card.command || d.command || 'Command';
+          const skillLabel = card.skill || d.skill || 'System Action';
+
+          const contentHtml = `<div style="background:rgba(20,5,5,0.95);border:1.5px solid #ff4444;border-radius:10px;padding:16px 22px;min-width:360px;backdrop-filter:blur(14px);box-shadow:0 0 35px rgba(255,50,50,0.45);color:#fff;font-family:'Orbitron',sans-serif;">
+            <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,80,80,0.4);padding-bottom:8px;margin-bottom:12px;">
+              <div style="font-size:12px;letter-spacing:2px;font-weight:bold;color:#ff5555;">⚠️ SECURITY CONFIRMATION</div>
+              <span style="font-size:10px;color:rgba(255,150,150,0.8);">${skillLabel}</span>
+            </div>
+            <div style="font-size:13px;line-height:1.6;margin-bottom:14px;">
+              Run: <code style="background:rgba(255,255,255,0.12);color:#00BFFF;padding:3px 8px;border-radius:4px;font-family:monospace;font-size:12px;">${targetCmd}</code> ?
+            </div>
+            <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:14px;letter-spacing:1px;">
+              AI attempted to trigger a sensitive system action. User authorization required.
+            </div>
+            <div style="display:flex;gap:12px;justify-content:flex-end;">
+              <button id="cancel-conf-btn-${confId}" style="background:rgba(255,50,50,0.2);border:1px solid #ff4444;color:#ff6666;font-family:'Orbitron';font-size:11px;padding:8px 18px;border-radius:4px;cursor:pointer;">[ CANCEL ]</button>
+              <button id="ok-conf-btn-${confId}" style="background:#00ff88;border:none;color:#000;font-family:'Orbitron';font-size:11px;font-weight:bold;padding:8px 22px;border-radius:4px;cursor:pointer;box-shadow:0 0 15px rgba(0,255,136,0.4);">[ CONFIRM ]</button>
+            </div>
+          </div>`;
+
+          cardContainer.innerHTML = contentHtml;
+          cardContainer.style.display = 'block';
+
+          const okBtn = document.getElementById(`ok-conf-btn-${confId}`);
+          const cancelBtn = document.getElementById(`cancel-conf-btn-${confId}`);
+
+          if (okBtn) {
+            okBtn.onclick = () => {
+              cardContainer.style.display = 'none';
+              socket.send({ type: 'confirm_action', id: confId, confirmed: true });
+            };
+          }
+          if (cancelBtn) {
+            cancelBtn.onclick = () => {
+              cardContainer.style.display = 'none';
+              socket.send({ type: 'confirm_action', id: confId, confirmed: false });
+            };
+          }
+        }
+        return;
+      }
 
       if (card.type === 'music_control') {
         const iframe = document.getElementById('yt-player-iframe') as HTMLIFrameElement;

@@ -374,15 +374,80 @@ async def call_ai(system: str, user: str, max_tokens: int = 12000,
     raise RuntimeError(f"All AI providers failed. Last error: {last_err}")
 
 
-async def stream_ai_conversation(system: str, messages: list, max_tokens: int = 1500):
+async def stream_ai_conversation(system: str, messages: list, max_tokens: int = 1500, is_detailed: bool = False):
     """
-    Async generator yielding (token_str, model_name) with prioritized fallback:
-    Claude -> Gemini -> Pollinations.
-    Maintains full conversation context.
+    Async generator yielding (token_str, model_name, fallback_reason).
+    Prioritizes fast small model (Gemini 2.5 Flash) for spoken voice replies,
+    and heavyweight model (Claude Sonnet) for detailed code or technical deep dives.
+    Maintains full conversation context and logs fallback diagnostics.
     """
-    # 1. Primary: Anthropic Claude
+    # Determine execution order
+    # For spoken answers, use fastest small model first (Gemini 2.5 Flash).
+    # For detailed technical/code requests, prioritize Claude if key is present.
+    try_gemini_first = (not is_detailed) and bool(GEMINI_API_KEY)
+
+    # 1. Path A: Gemini 2.5 Flash as Primary for Spoken Voice
+    if try_gemini_first:
+        gemini_name = f"Gemini ({GEMINI_MODEL})"
+        if not ANTHROPIC_API_KEY:
+            fallback_reason = f"Claude: placeholder/no API key in .env -> Using fast small model Gemini ({GEMINI_MODEL})"
+        else:
+            fallback_reason = f"Spoken voice mode: prioritized fast model Gemini ({GEMINI_MODEL}) for low latency"
+
+        try:
+            gemini_contents = []
+            for m in messages:
+                role = "user" if m.get("role") == "user" else "model"
+                text = (m.get("content") or m.get("text") or "").strip()
+                if not text:
+                    continue
+                if gemini_contents and gemini_contents[-1]["role"] == role:
+                    gemini_contents[-1]["parts"][0]["text"] += "\n" + text
+                else:
+                    gemini_contents.append({"role": role, "parts": [{"text": text}]})
+            if not gemini_contents or gemini_contents[0]["role"] != "user":
+                gemini_contents.insert(0, {"role": "user", "parts": [{"text": "Hello"}]})
+
+            payload = {
+                "contents": gemini_contents,
+                "systemInstruction": {"parts": [{"text": system}]},
+                "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.7}
+            }
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:streamGenerateContent?alt=sse&key={GEMINI_API_KEY}"
+
+            async with httpx.AsyncClient(timeout=45.0) as client:
+                async with client.stream("POST", url, json=payload) as response:
+                    if response.status_code == 200:
+                        yielded_any = False
+                        async for line in response.aiter_lines():
+                            if line.startswith("data: "):
+                                try:
+                                    d = json.loads(line[6:].strip())
+                                    candidates = d.get("candidates", [])
+                                    if candidates:
+                                        parts = candidates[0].get("content", {}).get("parts", [])
+                                        for p in parts:
+                                            txt = p.get("text", "")
+                                            if txt:
+                                                yielded_any = True
+                                                yield (txt, gemini_name, fallback_reason)
+                                except Exception:
+                                    pass
+                        if yielded_any:
+                            return
+                    else:
+                        print(f"[AI Brain Stream] Gemini returned HTTP {response.status_code}, falling back...")
+        except Exception as err:
+            print(f"[AI Brain Stream] Gemini stream failed: {err}. Falling back...")
+
+    # 2. Path B: Anthropic Claude (Primary for detailed/code, or fallback for voice)
     if ANTHROPIC_API_KEY:
         claude_name = f"Claude ({CLAUDE_MODEL})"
+        if is_detailed:
+            fallback_reason = f"Detailed technical query: prioritized Claude ({CLAUDE_MODEL})"
+        else:
+            fallback_reason = f"Gemini unavailable -> Falling back to Claude ({CLAUDE_MODEL})"
+
         try:
             formatted_msgs = []
             for m in messages:
@@ -423,19 +488,24 @@ async def stream_ai_conversation(system: str, messages: list, max_tokens: int = 
                                         chunk = payload.get("delta", {}).get("text", "")
                                         if chunk:
                                             yielded_any = True
-                                            yield (chunk, claude_name)
+                                            yield (chunk, claude_name, fallback_reason)
                                 except Exception:
                                     pass
                         if yielded_any:
                             return
                     else:
-                        print(f"[AI Brain Stream] Claude returned HTTP {response.status_code}, falling back to Gemini...")
+                        print(f"[AI Brain Stream] Claude returned HTTP {response.status_code}, falling back...")
         except Exception as err:
-            print(f"[AI Brain Stream] Claude stream failed: {err}. Falling back to Gemini...")
+            print(f"[AI Brain Stream] Claude stream failed: {err}. Falling back...")
 
-    # 2. Secondary: Google Gemini
-    if GEMINI_API_KEY:
+    # 3. Path C: Google Gemini as fallback if not tried first
+    if not try_gemini_first and GEMINI_API_KEY:
         gemini_name = f"Gemini ({GEMINI_MODEL})"
+        if not ANTHROPIC_API_KEY:
+            fallback_reason = f"Claude: placeholder/no API key in .env -> Falling back to Gemini ({GEMINI_MODEL})"
+        else:
+            fallback_reason = f"Claude failed -> Falling back to Gemini ({GEMINI_MODEL})"
+
         try:
             gemini_contents = []
             for m in messages:
@@ -472,7 +542,7 @@ async def stream_ai_conversation(system: str, messages: list, max_tokens: int = 
                                             txt = p.get("text", "")
                                             if txt:
                                                 yielded_any = True
-                                                yield (txt, gemini_name)
+                                                yield (txt, gemini_name, fallback_reason)
                                 except Exception:
                                     pass
                         if yielded_any:
@@ -482,8 +552,9 @@ async def stream_ai_conversation(system: str, messages: list, max_tokens: int = 
         except Exception as err:
             print(f"[AI Brain Stream] Gemini stream failed: {err}. Falling back to Pollinations...")
 
-    # 3. Tertiary: Pollinations (free fallback)
+    # 4. Tertiary: Pollinations (free fallback)
     poll_name = "Pollinations (free)"
+    fallback_reason = "Claude & Gemini unavailable or keys missing -> Using Pollinations (free)"
     try:
         poll_msgs = [{"role": "system", "content": system}]
         for m in messages:
@@ -512,17 +583,17 @@ async def stream_ai_conversation(system: str, messages: list, max_tokens: int = 
         words = text.split(" ")
         for i in range(0, len(words), 2):
             chunk = " ".join(words[i:i+2]) + (" " if i+2 < len(words) else "")
-            yield (chunk, poll_name)
+            yield (chunk, poll_name, fallback_reason)
             await asyncio.sleep(0.01)
         return
     except Exception as err:
         print(f"[AI Brain Stream] Pollinations fallback error: {err}")
-        yield ("I apologize, sir, but my cognitive neural pathways are temporarily unresponsive.", "System Error")
+        yield ("I apologize, sir, but my cognitive neural pathways are temporarily unresponsive.", "System Error", "All AI providers unreachable")
 
 
 async def stream_ai(system: str, user: str, max_tokens: int = 4000):
     """Legacy compatibility generator yielding string tokens."""
-    async for chunk, _ in stream_ai_conversation(system, [{"role": "user", "content": user}], max_tokens):
+    async for chunk, _, _ in stream_ai_conversation(system, [{"role": "user", "content": user}], max_tokens):
         yield chunk
 
 
