@@ -1,6 +1,7 @@
 import { createSocket } from './ws';
 import { VoiceInput, AudioPlayer } from './voice';
 import { createOrb, OrbState } from './orb';
+import { sanitisePanelHtml } from './sanitise';
 import { getPerformanceManager } from './performance-manager';
 import { TerminalStream } from './terminal-stream';
 import { PreviewManager } from './preview-manager';
@@ -127,6 +128,18 @@ function main() {
   const audio   = new AudioPlayer();
   orb.setAnalyser(audio.getAnalyser());
   audio.ensureUnlocked();
+
+  // Load persisted theme
+  const savedAccent = localStorage.getItem('jarvis_theme_accent');
+  if (savedAccent) {
+    document.documentElement.style.setProperty('--primary-cyan', savedAccent);
+    document.documentElement.style.setProperty('--hud-accent', savedAccent);
+    orb.setReactor({ color: savedAccent });
+  }
+  const savedBg = localStorage.getItem('jarvis_theme_bg');
+  if (savedBg) {
+    document.documentElement.style.setProperty('--bg-dark', savedBg);
+  }
 
   // Dream visualizer
   const dreamCanvas = document.getElementById('dream-canvas') as HTMLCanvasElement;
@@ -821,6 +834,18 @@ function main() {
             contentHtml += `<div style="margin-bottom:6px;"><strong style="color:#00ff88;">⚡ ${s.name}</strong>: ${s.description}</div>`;
           });
           contentHtml += `</div>`;
+        } else if (card.type === 'ai_panel' || card.html || card.data?.html) {
+          const rawHtml = card.html || card.data?.html || '';
+          const safeHtml = sanitisePanelHtml(rawHtml);
+          contentHtml += `<div class="ai-panel-content" style="font-family:'Rajdhani',sans-serif;font-size:13px;line-height:1.5;">${safeHtml}</div>`;
+        } else if (card.type === 'ui_control') {
+          const d = card.data || {};
+          contentHtml += `<div style="font-size:12px;font-family:'Orbitron',sans-serif;color:#00ff88;margin:6px 0;">⚡ ${d.action || d.detail || 'UI Adjusted'}</div>`;
+          contentHtml += `<div style="font-size:10px;font-family:monospace;color:rgba(0,191,255,0.7);">${JSON.stringify(d, null, 2)}</div>`;
+        } else if (card.type === 'orbit_control') {
+          const d = card.data || {};
+          contentHtml += `<div style="font-size:12px;font-family:'Orbitron',sans-serif;color:#00ff88;margin:6px 0;">🌌 ${d.status || d.action || 'Orbit Active'}</div>`;
+          contentHtml += `<div style="font-size:10px;font-family:monospace;color:rgba(0,191,255,0.7);">${JSON.stringify(d, null, 2)}</div>`;
         } else {
           contentHtml += `<div style="font-size:11px;font-family:monospace;color:#fff;">${JSON.stringify(card.data, null, 2)}</div>`;
         }
@@ -829,6 +854,97 @@ function main() {
         cardContainer.innerHTML = contentHtml;
         setTimeout(() => { cardContainer.style.display = 'none'; }, 25000);
       }
+    } else if (type === 'ui') {
+      const op = msg.op as string;
+      const args = (msg.args || {}) as any;
+
+      if (op === 'patch') {
+        if (args.accent) {
+          document.documentElement.style.setProperty('--primary-cyan', args.accent);
+          document.documentElement.style.setProperty('--hud-accent', args.accent);
+          localStorage.setItem('jarvis_theme_accent', args.accent);
+          orb.setReactor({ color: args.accent });
+        } else if (args.accent === null || args.accent === 'auto') {
+          document.documentElement.style.setProperty('--primary-cyan', '#00BFFF');
+          document.documentElement.style.setProperty('--hud-accent', '#00BFFF');
+          localStorage.removeItem('jarvis_theme_accent');
+          orb.setReactor({ color: null });
+        }
+
+        if (args.background) {
+          document.documentElement.style.setProperty('--bg-dark', args.background);
+          localStorage.setItem('jarvis_theme_bg', args.background);
+        } else if (args.background === null || args.background === 'auto') {
+          document.documentElement.style.setProperty('--bg-dark', '#000b18');
+          localStorage.removeItem('jarvis_theme_bg');
+        }
+
+        if (args.reactor) {
+          orb.setReactor(args.reactor);
+        }
+
+        if (args.chrome) {
+          const c = args.chrome;
+          const sidebar = document.getElementById('workspace-sidebar');
+          const statusTl = document.getElementById('status-tl');
+          const statusTr = document.getElementById('status-tr');
+          if (c.workspace !== undefined && sidebar) sidebar.style.display = c.workspace ? 'flex' : 'none';
+          if (c.systems !== undefined && statusTl) statusTl.style.display = c.systems ? 'block' : 'none';
+          if (c.brand !== undefined && statusTr) statusTr.style.display = c.brand ? 'block' : 'none';
+        }
+
+      } else if (op === 'orbit') {
+        if (args.action === 'clear') {
+          orb.clearOrbits();
+        } else if (args.action === 'remove') {
+          orb.removeOrbit(args.id);
+        } else if (args.action === 'add') {
+          orb.addOrbit(args);
+        }
+
+      } else if (op === 'effect') {
+        const kind = String(args.kind || 'pulse').toLowerCase();
+        document.body.classList.remove('fx-glitch', 'fx-pulse', 'fx-scan', 'fx-shake', 'fx-flash');
+        void document.body.offsetWidth;
+        document.body.classList.add(`fx-${kind}`);
+        setTimeout(() => {
+          document.body.classList.remove(`fx-${kind}`);
+        }, 800);
+
+      } else if (op === 'screen') {
+        const what = String(args.what || 'all');
+        if (what === 'all' || what === 'panels') {
+          const cardContainer = document.getElementById('hud-card-container');
+          if (cardContainer) cardContainer.style.display = 'none';
+        }
+        if (what === 'all' || what === 'transcript') {
+          const chatList = document.getElementById('chat-list');
+          if (chatList) chatList.innerHTML = '';
+        }
+
+      } else if (op === 'reset') {
+        document.documentElement.style.setProperty('--primary-cyan', '#00BFFF');
+        document.documentElement.style.setProperty('--hud-accent', '#00BFFF');
+        document.documentElement.style.setProperty('--bg-dark', '#000b18');
+        localStorage.removeItem('jarvis_theme_accent');
+        localStorage.removeItem('jarvis_theme_bg');
+        orb.setReactor({
+          style: 'ring',
+          scale: 1.0,
+          intensity: 1.0,
+          spin: 1.0,
+          color: null,
+          visible: true,
+        });
+        orb.clearOrbits();
+        const sidebar = document.getElementById('workspace-sidebar');
+        const statusTl = document.getElementById('status-tl');
+        const statusTr = document.getElementById('status-tr');
+        if (sidebar) sidebar.style.display = 'flex';
+        if (statusTl) statusTl.style.display = 'block';
+        if (statusTr) statusTr.style.display = 'block';
+      }
+
     } else if (type==='phone_event') {
       const ev=msg as any, phoneHud=document.getElementById('phone-call-hud')!;
       if(ev.event==='incoming_call'){ document.getElementById('phone-caller-id')!.textContent=ev.caller; document.getElementById('phone-status')!.textContent='RINGING...'; phoneHud.style.display='block'; synth.playWarning(); }

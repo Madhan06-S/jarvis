@@ -701,3 +701,105 @@ body.stealth-mode::after {
   #skills-panel { width: 92% !important; right: 4% !important; left: 4% !important; top: 60px !important; max-height: 70vh !important; }
 }
 
+/* ─────────────────────────────────────────────────────────────
+   HUD DESIGN SYSTEM & SANITIZED AI PANEL COMPONENTS
+   ───────────────────────────────────────────────────────────── */
+.hud-rows { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.hud-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; }
+.hud-idx { font-family: monospace; font-size: 9px; opacity: 0.6; min-width: 18px; }
+.hud-main { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.hud-label { font-weight: 600; color: #fff; letter-spacing: 0.5px; }
+.hud-sub { font-size: 9px; opacity: 0.7; margin-top: 2px; }
+.hud-tag { font-size: 8px; padding: 2px 6px; border-radius: 2px; border: 1px solid var(--primary-cyan, #00BFFF); text-transform: uppercase; letter-spacing: 1px; }
+.hud-metric { font-size: 16px; font-weight: 700; color: #fff; }
+.hud-unit { font-size: 9px; opacity: 0.6; margin-left: 2px; }
+.hud-note { font-size: 9px; opacity: 0.75; line-height: 1.4; font-style: italic; }
+
+.hud-img { width: 100%; max-height: 220px; object-fit: cover; border-radius: 4px; border: 1px solid rgba(0, 191, 255, 0.3); margin: 6px 0; }
+.hud-caption { font-size: 9px; opacity: 0.6; text-align: center; margin-top: 2px; }
+
+.hud-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; margin: 6px 0; }
+.hud-dim { opacity: 0.45; }
+.hud-hot { color: #ff3344 !important; text-shadow: 0 0 8px rgba(255, 51, 68, 0.6); }
+
+.hud-gallery { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.hud-thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 3px; border: 1px solid rgba(0, 191, 255, 0.4); flex-shrink: 0; }
+.hud-video { width: 100%; max-height: 240px; border-radius: 4px; border: 1px solid rgba(0, 191, 255, 0.3); background: #000; }
+.hud-embed { width: 100%; height: 200px; border-radius: 4px; border: 1px solid rgba(0, 191, 255, 0.3); }
+.hud-figure { margin: 6px 0; }
+
+.hud-bar {
+  position: relative;
+  height: 4px;
+  background: rgba(0, 191, 255, 0.15);
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 6px 0;
+}
+.hud-bar::after {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: calc(var(--v, 0) * 100%);
+  background: var(--primary-cyan, #00BFFF);
+  box-shadow: 0 0 8px var(--primary-cyan, #00BFFF);
+  transition: width 0.3s ease;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   VISUAL EFFECTS (ONE-OFF ANIMATIONS)
+   ───────────────────────────────────────────────────────────── */
+body.fx-glitch {
+  animation: hudGlitch 0.4s steps(2, start) infinite;
+}
+@keyframes hudGlitch {
+  0% { transform: translate(0, 0) skew(0deg); filter: hue-rotate(0deg); }
+  20% { transform: translate(-3px, 2px) skew(-2deg); filter: hue-rotate(90deg); }
+  40% { transform: translate(3px, -1px) skew(2deg); filter: hue-rotate(180deg); }
+  60% { transform: translate(-2px, -2px) skew(0deg); filter: hue-rotate(270deg); }
+  80% { transform: translate(2px, 3px) skew(1deg); filter: hue-rotate(45deg); }
+  100% { transform: translate(0, 0) skew(0deg); filter: hue-rotate(0deg); }
+}
+
+body.fx-pulse {
+  animation: hudPulse 0.6s ease-out;
+}
+@keyframes hudPulse {
+  0% { box-shadow: inset 0 0 0 rgba(0, 191, 255, 0); }
+  50% { box-shadow: inset 0 0 80px rgba(0, 191, 255, 0.5); }
+  100% { box-shadow: inset 0 0 0 rgba(0, 191, 255, 0); }
+}
+
+body.fx-scan::after {
+  content: '';
+  position: fixed; inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(0, 191, 255, 0.35) 50%, transparent);
+  height: 80px;
+  animation: hudScanSweep 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
+  z-index: 999999;
+}
+@keyframes hudScanSweep {
+  0% { top: -80px; }
+  100% { top: 100vh; }
+}
+
+body.fx-shake {
+  animation: hudShake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+@keyframes hudShake {
+  10%, 90% { transform: translate3d(-2px, 0, 0); }
+  20%, 80% { transform: translate3d(3px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+  40%, 60% { transform: translate3d(4px, 0, 0); }
+}
+
+body.fx-flash {
+  animation: hudFlash 0.5s ease-out;
+}
+@keyframes hudFlash {
+  0% { filter: brightness(2.5) contrast(1.5); }
+  100% { filter: brightness(1) contrast(1); }
+}
+
+

@@ -2,6 +2,26 @@ import { getPerformanceManager, type RenderProfile } from './performance-manager
 
 export type OrbState = 'idle' | 'listening' | 'transcribing' | 'thinking' | 'executing' | 'speaking';
 
+export interface ReactorProps {
+  style: 'ring' | 'sphere' | 'wire';
+  scale: number;
+  intensity: number;
+  spin: number;
+  color: string | null;
+  visible: boolean;
+}
+
+export interface OrbitDef {
+  id: string;
+  src: string;
+  radius?: number;
+  speed?: number;
+  size?: number;
+  tilt?: number;
+  opacity?: number;
+  phase?: number;
+}
+
 interface Particle {
   x: number;
   y: number;
@@ -139,64 +159,249 @@ export function createOrb(_canvas: HTMLCanvasElement) {
     if (particles.length !== perf.getProfile().particleCount) rebuildEntities();
   });
 
+  let reactor: ReactorProps = {
+    style: 'ring',
+    scale: 1.0,
+    intensity: 1.0,
+    spin: 1.0,
+    color: null,
+    visible: true,
+  };
+
+  interface ActiveOrbit {
+    def: OrbitDef;
+    img: HTMLImageElement | null;
+    loaded: boolean;
+    angle: number;
+  }
+
+  const activeOrbits: Map<string, ActiveOrbit> = new Map();
+
+  function resolveOrbitSrc(src: string): string {
+    const token = localStorage.getItem('jarvis_token') || '';
+    const tokenQuery = token ? `&token=${encodeURIComponent(token)}` : '';
+    const clean = src.replace(/^file:\/\//, '');
+    if (clean.startsWith('/') || /^[a-zA-Z]:\\/.test(clean)) {
+      return `/api/proxy/img?path=${encodeURIComponent(clean)}${tokenQuery}`;
+    }
+    if (/^https?:\/\//i.test(src)) {
+      return `/api/proxy/img?url=${encodeURIComponent(src)}${tokenQuery}`;
+    }
+    return src;
+  }
+
   function drawArcReactor() {
-    let speedMult = 1;
-    let colorTint = 'rgba(150,240,255,0.95)';
-    if (state === 'listening') {
-      speedMult = 2;
-      colorTint = 'rgba(0,255,200,0.95)';
-    } else if (state === 'transcribing') {
-      speedMult = 2.5;
-      colorTint = 'rgba(255,215,0,0.95)';
-    } else if (state === 'thinking') {
-      speedMult = 3;
-      colorTint = 'rgba(200,150,255,0.95)';
-    } else if (state === 'executing') {
-      speedMult = 2;
-      colorTint = 'rgba(0,255,136,0.95)';
-    } else if (state === 'speaking') {
-      speedMult = 1.5;
+    if (!reactor.visible) return;
+
+    let speedMult = reactor.spin;
+    let colorTint = reactor.color || 'rgba(150,240,255,0.95)';
+    if (!reactor.color) {
+      if (state === 'listening') {
+        speedMult *= 2;
+        colorTint = 'rgba(0,255,200,0.95)';
+      } else if (state === 'transcribing') {
+        speedMult *= 2.5;
+        colorTint = 'rgba(255,215,0,0.95)';
+      } else if (state === 'thinking') {
+        speedMult *= 3;
+        colorTint = 'rgba(200,150,255,0.95)';
+      } else if (state === 'executing') {
+        speedMult *= 2;
+        colorTint = 'rgba(0,255,136,0.95)';
+      } else if (state === 'speaking') {
+        speedMult *= 1.5;
+      }
     }
 
-    const grd = bctx.createRadialGradient(cx, cy, 0, cx, cy, 30);
-    grd.addColorStop(0, colorTint);
-    grd.addColorStop(0.35, 'rgba(0,180,255,0.5)');
-    grd.addColorStop(1, 'rgba(0,0,0,0)');
-    bctx.beginPath();
-    bctx.arc(cx, cy, 30, 0, Math.PI * 2);
-    bctx.fillStyle = grd;
-    bctx.fill();
+    const sc = reactor.scale;
+    const it = reactor.intensity;
 
-    bctx.save();
-    bctx.translate(cx, cy);
-    bctx.rotate(t * 0.5 * speedMult);
-    bctx.beginPath();
-    for (let i = 0; i < 3; i++) {
-      const a = (i / 3) * Math.PI * 2 - Math.PI / 2;
-      if (i === 0) bctx.moveTo(Math.cos(a) * 16, Math.sin(a) * 16);
-      else bctx.lineTo(Math.cos(a) * 16, Math.sin(a) * 16);
-    }
-    bctx.closePath();
-    bctx.strokeStyle = `rgba(0,220,255,${0.65 + Math.sin(t * 2) * 0.25})`;
-    bctx.lineWidth = 1;
-    bctx.stroke();
-    bctx.restore();
+    if (reactor.style === 'sphere') {
+      // Solid plasma core
+      const coreR = 36 * sc;
+      const grd = bctx.createRadialGradient(cx, cy, 0, cx, cy, coreR);
+      grd.addColorStop(0, '#ffffff');
+      grd.addColorStop(0.2, colorTint);
+      grd.addColorStop(0.7, 'rgba(0,180,255,0.6)');
+      grd.addColorStop(1, 'rgba(0,0,0,0)');
 
-    const ringLimit = perf.getMode() === 'performance' ? 4 : rings.length;
-    for (let i = 0; i < ringLimit; i++) {
-      const ring = rings[i];
+      bctx.save();
+      bctx.shadowBlur = 25 * it;
+      bctx.shadowColor = colorTint;
+      bctx.beginPath();
+      bctx.arc(cx, cy, coreR + Math.sin(t * 4) * 2, 0, Math.PI * 2);
+      bctx.fillStyle = grd;
+      bctx.fill();
+
+      // Coronal flares
+      for (let i = 0; i < 4; i++) {
+        bctx.beginPath();
+        const a = t * (0.4 + i * 0.2) * speedMult + (i * Math.PI) / 2;
+        bctx.arc(cx, cy, (coreR + 15 + i * 8) * sc, a, a + Math.PI * 0.6);
+        bctx.strokeStyle = colorTint;
+        bctx.lineWidth = 1.5 * sc;
+        bctx.stroke();
+      }
+      bctx.restore();
+
+    } else if (reactor.style === 'wire') {
+      // Skeletal geodesic lattice
+      const latticeR = 40 * sc;
       bctx.save();
       bctx.translate(cx, cy);
-      bctx.rotate(t * ring.speed * speedMult + ring.phase);
+      bctx.strokeStyle = colorTint;
+      bctx.lineWidth = 1;
+      bctx.shadowBlur = 10 * it;
+      bctx.shadowColor = colorTint;
+
+      const angle = t * 0.7 * speedMult;
+      const cosA = Math.cos(angle);
+      const sinA = Math.sin(angle);
+
+      // 3D Polyhedron points
+      const points = [
+        [-1, 0, 0], [1, 0, 0], [0, -1, 0], [0, 1, 0],
+        [0, 0, -1], [0, 0, 1],
+        [-0.7, -0.7, 0], [0.7, -0.7, 0], [0.7, 0.7, 0], [-0.7, 0.7, 0],
+      ];
+
+      const proj = points.map(([x, y, z]) => {
+        const rx = x * cosA - z * sinA;
+        const rz = x * sinA + z * cosA;
+        const ry = y * Math.cos(angle * 0.8) - rz * Math.sin(angle * 0.8);
+        return {
+          px: rx * latticeR,
+          py: ry * latticeR,
+          pz: rz,
+        };
+      });
+
       bctx.beginPath();
-      bctx.arc(0, 0, ring.r, 0, Math.PI * 2);
-      bctx.setLineDash(ring.dash);
-      const alpha = 0.3 + Math.sin(t * 0.8 + ring.phase) * 0.12;
-      bctx.strokeStyle = `rgba(0,191,255,${alpha})`;
-      bctx.lineWidth = ring.w;
+      for (let i = 0; i < proj.length; i++) {
+        for (let j = i + 1; j < proj.length; j++) {
+          const d = Math.hypot(proj[i].px - proj[j].px, proj[i].py - proj[j].py);
+          if (d < latticeR * 1.5) {
+            bctx.moveTo(proj[i].px, proj[i].py);
+            bctx.lineTo(proj[j].px, proj[j].py);
+          }
+        }
+      }
+      bctx.stroke();
+
+      for (let i = 0; i < 24; i++) {
+        const ta = (i / 24) * Math.PI * 2;
+        const r1 = 55 * sc;
+        const r2 = (i % 6 === 0 ? 64 : 59) * sc;
+        bctx.beginPath();
+        bctx.moveTo(Math.cos(ta) * r1, Math.sin(ta) * r1);
+        bctx.lineTo(Math.cos(ta) * r2, Math.sin(ta) * r2);
+        bctx.stroke();
+      }
+      bctx.restore();
+
+    } else {
+      // Stock Arc Reactor ('ring')
+      const grd = bctx.createRadialGradient(cx, cy, 0, cx, cy, 30 * sc);
+      grd.addColorStop(0, colorTint);
+      grd.addColorStop(0.35, 'rgba(0,180,255,0.5)');
+      grd.addColorStop(1, 'rgba(0,0,0,0)');
+      bctx.beginPath();
+      bctx.arc(cx, cy, 30 * sc, 0, Math.PI * 2);
+      bctx.fillStyle = grd;
+      bctx.fill();
+
+      bctx.save();
+      bctx.translate(cx, cy);
+      bctx.rotate(t * 0.5 * speedMult);
+      bctx.beginPath();
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2 - Math.PI / 2;
+        if (i === 0) bctx.moveTo(Math.cos(a) * 16 * sc, Math.sin(a) * 16 * sc);
+        else bctx.lineTo(Math.cos(a) * 16 * sc, Math.sin(a) * 16 * sc);
+      }
+      bctx.closePath();
+      bctx.strokeStyle = `rgba(0,220,255,${(0.65 + Math.sin(t * 2) * 0.25) * it})`;
+      bctx.lineWidth = 1 * sc;
       bctx.stroke();
       bctx.restore();
+
+      const ringLimit = perf.getMode() === 'performance' ? 4 : rings.length;
+      for (let i = 0; i < ringLimit; i++) {
+        const ring = rings[i];
+        bctx.save();
+        bctx.translate(cx, cy);
+        bctx.rotate(t * ring.speed * speedMult + ring.phase);
+        bctx.beginPath();
+        bctx.arc(0, 0, ring.r * sc, 0, Math.PI * 2);
+        bctx.setLineDash(ring.dash.map((d) => d * sc));
+        const alpha = (0.3 + Math.sin(t * 0.8 + ring.phase) * 0.12) * it;
+        bctx.strokeStyle = `rgba(0,191,255,${alpha})`;
+        bctx.lineWidth = ring.w * sc;
+        bctx.stroke();
+        bctx.restore();
+      }
     }
+  }
+
+  function drawOrbits() {
+    if (activeOrbits.size === 0) return;
+
+    activeOrbits.forEach((entry) => {
+      const def = entry.def;
+      const speed = (def.speed ?? 4) * 0.015 * reactor.spin;
+      entry.angle += speed;
+
+      const r = Math.min(W, H) * (def.radius ?? 0.55) * 0.5 * reactor.scale;
+      const tiltRad = ((def.tilt ?? 24) * Math.PI) / 180;
+
+      // Draw orbit path ellipse
+      bctx.save();
+      bctx.translate(cx, cy);
+      bctx.scale(1, Math.sin(tiltRad));
+      bctx.beginPath();
+      bctx.arc(0, 0, r, 0, Math.PI * 2);
+      bctx.strokeStyle = 'rgba(0, 191, 255, 0.15)';
+      bctx.setLineDash([4, 8]);
+      bctx.stroke();
+      bctx.restore();
+
+      // 3D position
+      const ox = cx + Math.cos(entry.angle) * r;
+      const oy = cy + Math.sin(entry.angle) * r * Math.sin(tiltRad);
+      const oz = Math.sin(entry.angle) * Math.cos(tiltRad);
+
+      const size = (def.size ?? 96) * (0.85 + oz * 0.25) * reactor.scale;
+      const opacity = (def.opacity ?? 0.9) * (0.75 + oz * 0.25) * reactor.intensity;
+
+      bctx.save();
+      bctx.globalAlpha = Math.max(0.1, Math.min(1.0, opacity));
+
+      if (entry.loaded && entry.img) {
+        bctx.save();
+        bctx.beginPath();
+        bctx.arc(ox, oy, size / 2, 0, Math.PI * 2);
+        bctx.clip();
+        bctx.drawImage(entry.img, ox - size / 2, oy - size / 2, size, size);
+        bctx.restore();
+
+        bctx.beginPath();
+        bctx.arc(ox, oy, size / 2, 0, Math.PI * 2);
+        bctx.strokeStyle = 'rgba(0, 191, 255, 0.7)';
+        bctx.lineWidth = 1.5;
+        bctx.shadowBlur = 10;
+        bctx.shadowColor = '#00BFFF';
+        bctx.stroke();
+
+        bctx.font = '8px monospace';
+        bctx.fillStyle = '#00BFFF';
+        bctx.textAlign = 'center';
+        bctx.fillText(def.id.toUpperCase(), ox, oy + size / 2 + 12);
+      } else {
+        bctx.strokeStyle = 'rgba(0, 191, 255, 0.4)';
+        bctx.strokeRect(ox - size / 2, oy - size / 2, size, size);
+      }
+      bctx.restore();
+    });
   }
 
   function drawHexNodes() {
@@ -431,6 +636,7 @@ export function createOrb(_canvas: HTMLCanvasElement) {
 
     drawHexNodes();
     drawArcReactor();
+    drawOrbits();
     drawParticlesLinked();
     drawShards();
     drawDNA();
@@ -458,6 +664,33 @@ export function createOrb(_canvas: HTMLCanvasElement) {
     },
     setAnalyser: (a: AnalyserNode) => {
       analyser = a;
+    },
+    setReactor: (props: Partial<ReactorProps>) => {
+      Object.assign(reactor, props);
+    },
+    getReactor: () => ({ ...reactor }),
+    addOrbit: (def: OrbitDef) => {
+      const img = new Image();
+      const active: ActiveOrbit = {
+        def,
+        img,
+        loaded: false,
+        angle: ((def.phase ?? 0) * Math.PI) / 180,
+      };
+      img.onload = () => {
+        active.loaded = true;
+      };
+      img.onerror = () => {
+        console.warn('[Orbit] Failed to load image:', def.src);
+      };
+      img.src = resolveOrbitSrc(def.src);
+      activeOrbits.set(def.id, active);
+    },
+    removeOrbit: (id: string) => {
+      activeOrbits.delete(id);
+    },
+    clearOrbits: () => {
+      activeOrbits.clear();
     },
     destroy: () => {
       running = false;
